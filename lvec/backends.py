@@ -32,8 +32,18 @@ def to_np(x):
 
 def backend_sqrt(x, lib):
     """Compute square root using appropriate backend."""
-    return ak.sqrt(x) if lib == 'ak' else np.sqrt(x)
-
+    if lib == 'ak':
+        return ak.sqrt(x)
+    else:
+        return np.sqrt(x)
+    
+def backend_where(condition, x, y, lib):
+    """Compute where using appropriate backend."""
+    if lib == 'ak':
+        return ak.where(condition, x, y)
+    else:
+        return np.where(condition, x, y)
+        
 def backend_sin(x, lib):
     """Compute sine using appropriate backend."""
     return ak.sin(x) if lib == 'ak' else np.sin(x)

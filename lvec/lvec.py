@@ -1,10 +1,12 @@
 # lvec.py
-from lvec.backends import (is_ak, is_np, to_ak, to_np, 
-                      backend_sin, backend_cos, backend_sqrt, backend_log, 
-                      backend_atan2, backend_sinh, backend_cosh)
+from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
+                        backend_sin, backend_cos, backend_atan2,
+                        backend_sinh, backend_cosh, backend_where)
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
                    compute_pt, compute_p, compute_mass, compute_eta, compute_phi)
 from .exceptions import ShapeError
+import numpy as np
+
 
 class LVec:
     """
@@ -142,15 +144,17 @@ class LVec:
         b2 = bx*bx + by*by + bz*bz
         gamma = 1.0 / backend_sqrt(1.0 - b2, self._lib)
         bp = bx*self.px + by*self.py + bz*self.pz
-        gamma2 = (gamma - 1.0) / b2 if b2 > 0 else 0.0
+        
+        # Modify the condition to work with arrays
+        gamma2 = np.where(b2 > 0, (gamma - 1.0) / b2, 0.0)
         
         px = self.px + gamma2*bp*bx + gamma*bx*self.E
         py = self.py + gamma2*bp*by + gamma*by*self.E
         pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
         E = gamma*(self.E + bp)
-        
-        return LVec(px, py, pz, E)
     
+        return LVec(px, py, pz, E)
+            
     def boostz(self, bz):
         """Apply boost along z-axis."""
         return self.boost(0, 0, bz)
