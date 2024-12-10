@@ -145,3 +145,7 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
+
+## ROOT
+
+**/*.root
