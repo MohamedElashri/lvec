@@ -191,16 +191,16 @@ class LVec:
             'pz': to_np(self.pz),
             'E': to_np(self.E)
         }
-    
+        
     def to_ak(self):
         """Convert to Awkward arrays."""
         return {
-            'px': to_ak(self.px),
-            'py': to_ak(self.py),
-            'pz': to_ak(self.pz),
-            'E': to_ak(self.E)
+            'px': to_ak(np.atleast_1d(self.px)),
+            'py': to_ak(np.atleast_1d(self.py)),
+            'pz': to_ak(np.atleast_1d(self.pz)),
+            'E': to_ak(np.atleast_1d(self.E))
         }
-    
+        
     def to_p4(self):
         """Return components as tuple."""
         return self.px, self.py, self.pz, self.E
@@ -210,7 +210,7 @@ class LVec:
         return self.pt, self.eta, self.phi, self.mass
     
     def to_root_dict(self):
-        """Return dictionary compatible with ROOT."""
+        """Convert to ROOT-compatible dictionary."""
         return {
             'fX': to_np(self.px),
             'fY': to_np(self.py),

@@ -22,12 +22,17 @@ def to_ak(x):
         raise DependencyError("Awkward array support requires awkward package")
     if is_ak(x):
         return x
+    # Handle scalar inputs by making them single-element arrays first
+    if isinstance(x, (float, int)):
+        return ak.Array([x])
     return ak.Array(x)
 
 def to_np(x):
     """Convert input to NumPy array."""
     if is_ak(x):
         return ak.to_numpy(x)
+    if isinstance(x, (float, int)):
+        return np.array([x])
     return np.asarray(x)
 
 def backend_sqrt(x, lib):
