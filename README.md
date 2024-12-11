@@ -132,7 +132,7 @@ If you use LVec in your research, please cite:
 
 ```bibtex
 @software{lvec,
-  author = {Author},
+  author = {Mohamed Elashri},
   title = {LVec: A Python Package for Lorentz Vector Analysis},
   year = {2024},
   url = {https://github.com/MohamedElashri/lvec}
