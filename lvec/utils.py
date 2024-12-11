@@ -12,45 +12,86 @@ def ensure_array(*args):
         arrays = [to_ak(arg) for arg in args]
         lib = 'ak'
     else:
-        arrays = [to_np(arg) if not isinstance(arg, (float, int)) else np.array([arg]) for arg in args]
+        # Only convert to numpy array if not scalar
+        arrays = []
+        for arg in args:
+            if isinstance(arg, (float, int)):
+                arrays.append(arg)
+            else:
+                arrays.append(to_np(arg))
         lib = 'np'
     return (*arrays, lib)
-
+    
 def check_shapes(*arrays):
-    """Verify all arrays have consistent shapes."""
+    """
+    Verify all arrays have consistent shapes.
+    
+    Parameters
+    ----------
+    *arrays : array-like or scalar
+        Arrays to check, with the last element being the library type
+    """
     lib = arrays[-1]  # Last argument is the library type
     arrays = arrays[:-1]  # All but the last argument are arrays
     
+    # If all inputs are scalars, they're compatible by definition
+    if all(isinstance(arr, (float, int)) for arr in arrays):
+        return
+    
+    # If we have a mix of scalars and arrays, or all arrays
     if lib == 'ak':
-        lengths = [len(arr) for arr in arrays]
-        if not all(l == lengths[0] for l in lengths):
+        # For arrays, check lengths
+        array_lengths = [len(arr) if not isinstance(arr, (float, int)) else 1 
+                        for arr in arrays]
+        if not all(l == array_lengths[0] for l in array_lengths):
             raise ShapeError("Inconsistent array lengths")
     else:
-        shapes = [arr.shape for arr in arrays]
-        if not all(s == shapes[0] for s in shapes):
+        # For numpy arrays, check shapes
+        array_shapes = [arr.shape if hasattr(arr, 'shape') else ()
+                       for arr in arrays]
+        if not all(s == array_shapes[0] for s in array_shapes):
             raise ShapeError("Inconsistent array shapes")
-
+        
+    
 def compute_pt(px, py, lib):
     """Compute transverse momentum."""
-    return backend_sqrt(px*px + py*py, lib)
+    pt = backend_sqrt(px*px + py*py, lib)
+    # Convert to scalar if input was scalar
+    if isinstance(px, (float, int)) and isinstance(py, (float, int)):
+        return float(pt)
+    return pt
 
 def compute_p(px, py, pz, lib):
     """Compute total momentum."""
-    return backend_sqrt(px*px + py*py + pz*pz, lib)
+    p = backend_sqrt(px*px + py*py + pz*pz, lib)
+    if isinstance(px, (float, int)) and isinstance(py, (float, int)) and isinstance(pz, (float, int)):
+        return float(p)
+    return p
+
 
 def compute_mass(E, p, lib):
     """Compute mass from energy and momentum."""
     m2 = E*E - p*p
-    return backend_sqrt(m2 * (m2 > 0), lib)
+    m = backend_sqrt(m2 * (m2 > 0), lib)
+    if isinstance(E, (float, int)) and isinstance(p, (float, int)):
+        return float(m)
+    return m
+
 
 def compute_eta(p, pz, lib):
     """Compute pseudorapidity."""
     pt = compute_pt(p, pz, lib)
-    return backend_atan2(pt, pz, lib)
+    eta = backend_atan2(pt, pz, lib)
+    if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
+        return float(eta)
+    return eta
 
 def compute_phi(px, py, lib):
     """Compute azimuthal angle."""
-    return backend_atan2(py, px, lib)
+    phi = backend_atan2(py, px, lib)
+    if isinstance(px, (float, int)) and isinstance(py, (float, int)):
+        return float(phi)
+    return phi
 
 def compute_p4_from_ptepm(pt, eta, phi, m, lib):
     """Convert pt, eta, phi, mass to px, py, pz, E."""
@@ -58,4 +99,8 @@ def compute_p4_from_ptepm(pt, eta, phi, m, lib):
     py = pt * backend_sin(phi, lib)
     pz = pt * backend_sinh(eta, lib)
     E = backend_sqrt(pt*pt * backend_cosh(eta, lib)**2 + m*m, lib)
+    
+    # Handle scalar inputs
+    if all(isinstance(x, (float, int)) for x in [pt, eta, phi, m]):
+        return float(px), float(py), float(pz), float(E)
     return px, py, pz, E

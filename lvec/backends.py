@@ -32,11 +32,11 @@ def to_np(x):
 
 def backend_sqrt(x, lib):
     """Compute square root using appropriate backend."""
-    if lib == 'ak':
-        return ak.sqrt(x)
-    else:
+    if isinstance(x, (float, int)):
         return np.sqrt(x)
-    
+    return ak.sqrt(x) if lib == 'ak' else np.sqrt(x)
+
+
 def backend_where(condition, x, y, lib):
     """Compute where using appropriate backend."""
     if lib == 'ak':
@@ -46,22 +46,33 @@ def backend_where(condition, x, y, lib):
         
 def backend_sin(x, lib):
     """Compute sine using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.sin(x)
     return ak.sin(x) if lib == 'ak' else np.sin(x)
 
 def backend_cos(x, lib):
     """Compute cosine using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.cos(x)
     return ak.cos(x) if lib == 'ak' else np.cos(x)
+
 
 def backend_sinh(x, lib):
     """Compute hyperbolic sine using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.sinh(x)
     return ak.sinh(x) if lib == 'ak' else np.sinh(x)
 
 def backend_cosh(x, lib):
     """Compute hyperbolic cosine using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.cosh(x)
     return ak.cosh(x) if lib == 'ak' else np.cosh(x)
-
+    
 def backend_atan2(y, x, lib):
     """Compute arctangent2 using appropriate backend."""
+    if isinstance(x, (float, int)) and isinstance(y, (float, int)):
+        return np.arctan2(y, x)
     return ak.arctan2(y, x) if lib == 'ak' else np.arctan2(y, x)
 
 def backend_log(x, lib):
