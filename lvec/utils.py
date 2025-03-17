@@ -3,24 +3,31 @@ import numpy as np
 from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_sin, backend_cos, backend_atan2,
                       backend_sinh, backend_cosh)
-from .exceptions import ShapeError
+from .exceptions import ShapeError, BackendError
 
 def ensure_array(*args):
     """Convert inputs to consistent array type."""
-    use_ak = any(is_ak(arg) for arg in args)
-    if use_ak:
-        arrays = [to_ak(arg) for arg in args]
-        lib = 'ak'
-    else:
-        # Only convert to numpy array if not scalar
-        arrays = []
-        for arg in args:
-            if isinstance(arg, (float, int)):
-                arrays.append(arg)
-            else:
-                arrays.append(to_np(arg))
-        lib = 'np'
-    return (*arrays, lib)
+    try:
+        # Check for None values first
+        if any(x is None for x in args):
+            raise ValueError("Cannot process None values")
+            
+        use_ak = any(is_ak(arg) for arg in args)
+        if use_ak:
+            arrays = [to_ak(arg) for arg in args]
+            lib = 'ak'
+        else:
+            # Only convert to numpy array if not scalar
+            arrays = []
+            for arg in args:
+                if isinstance(arg, (float, int)):
+                    arrays.append(arg)
+                else:
+                    arrays.append(to_np(arg))
+            lib = 'np'
+        return (*arrays, lib)
+    except Exception as e:
+        raise BackendError("initialization", "unknown", str(e))
     
 def check_shapes(*arrays):
     """
@@ -31,28 +38,41 @@ def check_shapes(*arrays):
     *arrays : array-like or scalar
         Arrays to check, with the last element being the library type
     """
-    lib = arrays[-1]  # Last argument is the library type
-    arrays = arrays[:-1]  # All but the last argument are arrays
+    lib = arrays[-1]
+    arrays = arrays[:-1]
     
-    # If all inputs are scalars, they're compatible by definition
-    if all(isinstance(arr, (float, int)) for arr in arrays):
+    # Get shape information for error reporting
+    shape_info = []
+    for i, arr in enumerate(arrays):
+        if isinstance(arr, (float, int)):
+            shape_info.append(f"arrays[{i}]: scalar")
+        elif arr is None:
+            shape_info.append(f"arrays[{i}]: None")
+        else:
+            shape = getattr(arr, 'shape', None) or len(arr)
+            shape_info.append(f"arrays[{i}]: {shape}")
+    
+    # If all inputs are scalars, they're compatible
+    if all(isinstance(arr, (float, int)) or arr is None for arr in arrays):
         return
-    
-    # If we have a mix of scalars and arrays, or all arrays
+        
     if lib == 'ak':
-        # For arrays, check lengths
-        array_lengths = [len(arr) if not isinstance(arr, (float, int)) else 1 
+        array_lengths = [len(arr) if not isinstance(arr, (float, int)) and arr is not None else 1 
                         for arr in arrays]
         if not all(l == array_lengths[0] for l in array_lengths):
-            raise ShapeError("Inconsistent array lengths")
+            raise ShapeError(
+                "Inconsistent array lengths in Awkward arrays",
+                shapes=shape_info
+            )
     else:
-        # For numpy arrays, check shapes
-        array_shapes = [arr.shape if hasattr(arr, 'shape') else ()
+        array_shapes = [arr.shape if hasattr(arr, 'shape') and arr is not None else ()
                        for arr in arrays]
         if not all(s == array_shapes[0] for s in array_shapes):
-            raise ShapeError("Inconsistent array shapes")
-        
-    
+            raise ShapeError(
+                "Inconsistent array shapes in NumPy arrays",
+                shapes=shape_info
+            )
+
 def compute_pt(px, py, lib):
     """Compute transverse momentum."""
     pt = backend_sqrt(px*px + py*py, lib)

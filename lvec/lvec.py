@@ -1,10 +1,11 @@
 # lvec.py
+import awkward as ak
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_sin, backend_cos, backend_atan2,
                         backend_sinh, backend_cosh, backend_where)
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
                    compute_pt, compute_p, compute_mass, compute_eta, compute_phi)
-from .exceptions import ShapeError
+from .exceptions import ShapeError, InputError, BackendError, DependencyError
 import numpy as np
 
 
@@ -27,9 +28,30 @@ class LVec:
         Args:
             px, py, pz: Momentum components (float, list, ndarray, or ak.Array)
             E: Energy (float, list, ndarray, or ak.Array)
+        
+        Raises:
+            ShapeError: If input arrays have inconsistent shapes
+            InputError: If any input has invalid values
+            BackendError: If there's an issue with the backend operations
         """
-        self._px, self._py, self._pz, self._E, self._lib = ensure_array(px, py, pz, E)
-        check_shapes(self._px, self._py, self._pz, self._E, self._lib)  # _lib is passed as the last argument
+        try:
+            self._px, self._py, self._pz, self._E, self._lib = ensure_array(px, py, pz, E)
+            check_shapes(self._px, self._py, self._pz, self._E, self._lib)
+        except Exception as e:
+            if isinstance(e, ShapeError):
+                raise
+            raise BackendError("initialization", self._lib, str(e))
+            
+        # Validate physics constraints
+        if isinstance(self._E, (float, int)):
+            if self._E < 0:
+                raise InputError("E", self._E, "Energy must be non-negative")
+        else:
+            if self._lib == 'np' and (self._E < 0).any():
+                raise InputError("E", "array", "All energy values must be non-negative")
+            elif self._lib == 'ak' and ak.any(self._E < 0):
+                raise InputError("E", "array", "All energy values must be non-negative")
+                
         self._cache = {}
         self._version = 0
         
@@ -140,21 +162,48 @@ class LVec:
                    self.pz[idx], self.E[idx])
     
     def boost(self, bx, by, bz):
-        """Apply Lorentz boost."""
-        b2 = bx*bx + by*by + bz*bz
-        gamma = 1.0 / backend_sqrt(1.0 - b2, self._lib)
-        bp = bx*self.px + by*self.py + bz*self.pz
+        """
+        Apply Lorentz boost.
         
-        # Modify the condition to work with arrays
-        gamma2 = np.where(b2 > 0, (gamma - 1.0) / b2, 0.0)
-        
-        px = self.px + gamma2*bp*bx + gamma*bx*self.E
-        py = self.py + gamma2*bp*by + gamma*by*self.E
-        pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
-        E = gamma*(self.E + bp)
-    
-        return LVec(px, py, pz, E)
+        Raises:
+            InputError: If boost velocity is >= speed of light
+            BackendError: If there's an issue with the backend calculations
+            DependencyError: If required backend package is not available
+        """
+        try:
+            b2 = bx*bx + by*by + bz*bz
+            if isinstance(b2, (float, int)):
+                if b2 >= 1:
+                    raise InputError("boost velocity", f"√{b2}", "Must be < 1 (speed of light)")
+            else:
+                if self._lib == 'np' and (b2 >= 1).any():
+                    raise InputError("boost velocity", "array", "All values must be < 1 (speed of light)")
+                elif self._lib == 'ak':
+                    try:
+                        import awkward
+                    except ImportError:
+                        raise DependencyError("awkward", "pip install awkward")
+                    if awkward.any(b2 >= 1):
+                        raise InputError("boost velocity", "array", "All values must be < 1 (speed of light)")
             
+            # ...existing boost implementation...
+            gamma = 1.0 / backend_sqrt(1.0 - b2, self._lib)
+            bp = bx*self.px + by*self.py + bz*self.pz
+        
+            # Modify the condition to work with arrays
+            gamma2 = np.where(b2 > 0, (gamma - 1.0) / b2, 0.0)
+        
+            px = self.px + gamma2*bp*bx + gamma*bx*self.E
+            py = self.py + gamma2*bp*by + gamma*by*self.E
+            pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
+            E = gamma*(self.E + bp)
+    
+            return LVec(px, py, pz, E)
+        except Exception as e:
+            if isinstance(e, (InputError, DependencyError)):
+                raise
+            raise BackendError("boost", self._lib, str(e))
+    
     def boostz(self, bz):
         """Apply boost along z-axis."""
         return self.boost(0, 0, bz)

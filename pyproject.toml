@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.20.0",
     "awkward>=2.0.0",
+    "uproot>=5.4.2",
 ]
 
 [project.optional-dependencies]

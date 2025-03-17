@@ -147,5 +147,8 @@ pyrightconfig.json
 
 
 ## ROOT
-
 **/*.root
+
+
+## uv 
+uv.lock
