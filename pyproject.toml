@@ -28,6 +28,10 @@ classifiers = [
 dependencies = [
     "numpy>=1.20.0",
     "awkward>=2.0.0",
+    "matplotlib>=3.7.5",
+    "uproot>=5.4.2",
+    "vector>=1.6.1",
+    "numba>=0.58.1",
 ]
 
 [project.optional-dependencies]

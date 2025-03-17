@@ -39,8 +39,8 @@ def backend_sqrt(x, lib):
     """Compute square root using appropriate backend."""
     if isinstance(x, (float, int)):
         return np.sqrt(x)
-    return ak.sqrt(x) if lib == 'ak' else np.sqrt(x)
-
+    # Always use numpy for math functions with awkward arrays
+    return np.sqrt(to_np(x))
 
 def backend_where(condition, x, y, lib):
     """Compute where using appropriate backend."""
@@ -53,33 +53,38 @@ def backend_sin(x, lib):
     """Compute sine using appropriate backend."""
     if isinstance(x, (float, int)):
         return np.sin(x)
-    return ak.sin(x) if lib == 'ak' else np.sin(x)
+    # Always use numpy for math functions with awkward arrays
+    return np.sin(to_np(x))
 
 def backend_cos(x, lib):
     """Compute cosine using appropriate backend."""
     if isinstance(x, (float, int)):
         return np.cos(x)
-    return ak.cos(x) if lib == 'ak' else np.cos(x)
-
+    # Always use numpy for math functions with awkward arrays
+    return np.cos(to_np(x))
 
 def backend_sinh(x, lib):
     """Compute hyperbolic sine using appropriate backend."""
     if isinstance(x, (float, int)):
         return np.sinh(x)
-    return ak.sinh(x) if lib == 'ak' else np.sinh(x)
+    # Always use numpy for math functions with awkward arrays
+    return np.sinh(to_np(x))
 
 def backend_cosh(x, lib):
     """Compute hyperbolic cosine using appropriate backend."""
     if isinstance(x, (float, int)):
         return np.cosh(x)
-    return ak.cosh(x) if lib == 'ak' else np.cosh(x)
+    # Always use numpy for math functions with awkward arrays
+    return np.cosh(to_np(x))
     
 def backend_atan2(y, x, lib):
     """Compute arctangent2 using appropriate backend."""
     if isinstance(x, (float, int)) and isinstance(y, (float, int)):
         return np.arctan2(y, x)
-    return ak.arctan2(y, x) if lib == 'ak' else np.arctan2(y, x)
+    # Always use numpy for math functions with awkward arrays
+    return np.arctan2(to_np(y), to_np(x))
 
 def backend_log(x, lib):
     """Compute natural logarithm using appropriate backend."""
-    return ak.log(x) if lib == 'ak' else np.log(x)
+    # Always use numpy for math functions with awkward arrays
+    return np.log(to_np(x))

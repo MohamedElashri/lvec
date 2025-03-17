@@ -109,38 +109,19 @@ def plot_results(sizes, lvec_data, vector_data):
     ax1.set_ylabel('Time per operation (ms)')
     ax1.set_title('Performance Comparison: LVec vs vector package')
     ax1.grid(True)
-    ax1.legend()
-    
-    # Middle plot: ratio
-    ax2 = fig.add_subplot(gs[1], sharex=ax1)
-    ratio = vector_times / lvec_times
-    ratio_error = ratio * np.sqrt(
-        (vector_errors/vector_times)**2 + 
-        (lvec_errors/lvec_times)**2
-    )
-    
-    ax2.errorbar(sizes, ratio, yerr=ratio_error, fmt='o-', color='black',
-                capsize=3)
-    ax2.axhline(y=1, color='r', linestyle='--', alpha=0.5)
-    ax2.set_ylabel('Vector/LVec')
-    ax2.grid(True)
-    
-    # Set reasonable ratio plot limits
-    median_ratio = np.median(ratio)
-    ax2.set_ylim(0.5 * median_ratio, 1.5 * median_ratio)
-    
+    ax1.legend()    
     # Bottom plot: memory usage
-    ax3 = fig.add_subplot(gs[2], sharex=ax1)
-    ax3.plot(sizes, lvec_memory, 'o-', label='LVec')
-    ax3.plot(sizes, vector_memory, 'o-', label='vector')
-    ax3.set_xscale('log')
-    ax3.set_yscale('log')
-    ax3.set_xlabel('Array Size')
-    ax3.set_ylabel('Memory Usage (MB)')
-    ax3.grid(True)
-    ax3.legend()
+    ax2 = fig.add_subplot(gs[2], sharex=ax1)
+    ax2.plot(sizes, lvec_memory, 'o-', label='LVec')
+    ax2.plot(sizes, vector_memory, 'o-', label='vector')
+    ax2.set_xscale('log')
+    ax2.set_yscale('log')
+    ax2.set_xlabel('Array Size')
+    ax2.set_ylabel('Memory Usage (MB)')
+    ax2.grid(True)
+    ax2.legend()
     
-    plt.savefig('benchmark_results.png', dpi=300, bbox_inches='tight')
+    plt.savefig('benchmark_results.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == '__main__':
