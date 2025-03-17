@@ -1,3 +1,5 @@
+[![lvec CI](https://github.com/MohamedElashri/lvec/actions/workflows/Build_Package.yml/badge.svg)](https://github.com/MohamedElashri/lvec/actions/workflows/Build_Package.yml)
+
 # LVec
 
 [![PyPI version](https://badge.fury.io/py/lvec.svg)](https://badge.fury.io/py/lvec)
