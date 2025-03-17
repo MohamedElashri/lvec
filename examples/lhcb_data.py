@@ -5,7 +5,8 @@ import numpy as np
 import uproot
 import awkward as ak
 import matplotlib.pyplot as plt
-from lvec import LVec  # Import our LVEC package
+from lvec import LVec 
+from lvec.backends import to_np  
 
 # Set LHCb style
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -43,17 +44,17 @@ def analyze_data(filename):
                        "H3_PX", "H3_PY", "H3_PZ"])
     
     # Convert awkward arrays to numpy arrays
-    h1_px = ak.to_numpy(data["H1_PX"])
-    h1_py = ak.to_numpy(data["H1_PY"])
-    h1_pz = ak.to_numpy(data["H1_PZ"])
+    h1_px = to_np(data["H1_PX"])
+    h1_py = to_np(data["H1_PY"])
+    h1_pz = to_np(data["H1_PZ"])
     
-    h2_px = ak.to_numpy(data["H2_PX"])
-    h2_py = ak.to_numpy(data["H2_PY"])
-    h2_pz = ak.to_numpy(data["H2_PZ"])
+    h2_px = to_np(data["H2_PX"])
+    h2_py = to_np(data["H2_PY"])
+    h2_pz = to_np(data["H2_PZ"])
     
-    h3_px = ak.to_numpy(data["H3_PX"])
-    h3_py = ak.to_numpy(data["H3_PY"])
-    h3_pz = ak.to_numpy(data["H3_PZ"])
+    h3_px = to_np(data["H3_PX"])
+    h3_py = to_np(data["H3_PY"])
+    h3_pz = to_np(data["H3_PZ"])
     
     # Calculate energies assuming pion mass (139.57 MeV)
     pion_mass = 0.13957  # GeV

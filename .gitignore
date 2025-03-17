@@ -152,3 +152,7 @@ pyrightconfig.json
 
 ## uv 
 uv.lock
+
+
+## pdf plots
+**/*.pdf
