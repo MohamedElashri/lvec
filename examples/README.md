@@ -72,6 +72,45 @@ beta_x = -Z.px/Z.E
 muon1_rest = muon1.boost(beta_x, beta_y, beta_z)
 ```
 
+### 5. LHCb Analysis (`lhcb_data.py`)
+Demonstrates how to:
+- Work with real LHCb open data (B→hhh decay)
+- Calculate two-body invariant masses
+- Create publication-quality plots with LHCb style
+- Handle multiple particle combinations
+
+```python
+# Create Lorentz vectors for each particle
+h1 = LVec(h1_px, h1_py, h1_pz, calculate_energy(h1_px, h1_py, h1_pz))
+h2 = LVec(h2_px, h2_py, h2_pz, calculate_energy(h2_px, h2_py, h2_pz))
+
+# Calculate two-body invariant masses
+m12 = (h1 + h2).mass  # Invariant mass of particles 1 and 2
+```
+
+#### Dependencies
+Additional dependencies required for this example:
+```bash
+pip install uproot matplotlib
+```
+
+#### Data
+Uses LHCb open data from:
+- Dataset: B2HHH_MagnetDown.root (just a sample)
+- Source: [CERN Open Data](https://opendata.cern.ch/record/4900)
+- Description: B→hhh decay data collected by LHCb in 2011 at √s = 7 TeV
+
+#### Running the Example
+```bash
+python lhcb_data.py
+```
+
+This will:
+1. Download the LHCb data file
+2. Calculate two-body invariant masses
+3. Create publication-style mass distribution plots
+4. Save plots as 'mass_distributions.pdf'
+
 ## Running the Examples
 
 Run each example individually:
@@ -80,6 +119,7 @@ python 01_basic_reading.py
 python 02_decay_reconstruction.py
 python 03_advanced_selections.py
 python 04_boost_frame.py
+python lhcb_data.py
 ```
 
 ## Expected Output
@@ -123,6 +163,23 @@ Boosted Z mass: 0.22 GeV
 
 Mean cos(theta) in rest frame: -0.007
 ```
+
+### LHCb Analysis
+
+The output will be a PDF file named `mass_distributions.pdf` containing three mass distribution plots:
+
+```
+Two-body invariant mass statistics:
+m12 mean: 1803.56 GeV
+m23 mean: 2513.31 GeV
+m13 mean: 2951.84 GeV
+
+Mass distribution plots have been saved as 'mass_distributions.pdf'
+
+```
+This is the plot you should get is:
+
+![Mass Distributions](plots/mass_distributions.png)
 
 ## Additional Usage Tips
 
