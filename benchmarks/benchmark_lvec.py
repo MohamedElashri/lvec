@@ -84,68 +84,53 @@ def benchmark_lvec_vs_vector(sizes, n_repeats=10):
             np.array(lvec_memory), np.array(vector_memory))
 
 def plot_results(sizes, lvec_data, vector_data):
-    """Plot benchmark results with error bars and ratio plot."""
-    lvec_times, lvec_errors, lvec_memory = lvec_data
-    vector_times, vector_errors, vector_memory = vector_data
+    """Plot benchmark results."""
+    lvec_times, _, lvec_memory = lvec_data
+    vector_times, _, vector_memory = vector_data
     
     # Convert to milliseconds
     lvec_times *= 1000
-    lvec_errors *= 1000
     vector_times *= 1000
-    vector_errors *= 1000
     
-    # Create figure with three subplots
-    fig = plt.figure(figsize=(12, 12))
-    gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 2], hspace=0.1)
+    # Create figure with two subplots
+    plt.style.use('default')
+    fig = plt.figure(figsize=(12, 8))
+    gs = fig.add_gridspec(2, 1, height_ratios=[1, 1], hspace=0.3)
     
     # Upper plot: timing comparison
     ax1 = fig.add_subplot(gs[0])
-    ax1.errorbar(sizes, lvec_times, yerr=lvec_errors, 
-                fmt='o-', label='LVec', capsize=3)
-    ax1.errorbar(sizes, vector_times, yerr=vector_errors, 
-                fmt='o-', label='vector', capsize=3)
+    ax1.plot(sizes, lvec_times, 'o-', label='LVec', color='#3498db', linewidth=2, markersize=8)
+    ax1.plot(sizes, vector_times, 'o-', label='vector', color='#9b59b6', linewidth=2, markersize=8)
     ax1.set_xscale('log')
     ax1.set_yscale('log')
-    ax1.set_ylabel('Time per operation (ms)')
-    ax1.set_title('Performance Comparison: LVec vs vector package')
-    ax1.grid(True)
-    ax1.legend()
-    
-    # Middle plot: ratio
-    ax2 = fig.add_subplot(gs[1], sharex=ax1)
-    ratio = vector_times / lvec_times
-    ratio_error = ratio * np.sqrt(
-        (vector_errors/vector_times)**2 + 
-        (lvec_errors/lvec_times)**2
-    )
-    
-    ax2.errorbar(sizes, ratio, yerr=ratio_error, fmt='o-', color='black',
-                capsize=3)
-    ax2.axhline(y=1, color='r', linestyle='--', alpha=0.5)
-    ax2.set_ylabel('Vector/LVec')
-    ax2.grid(True)
-    
-    # Set reasonable ratio plot limits
-    median_ratio = np.median(ratio)
-    ax2.set_ylim(0.5 * median_ratio, 1.5 * median_ratio)
+    ax1.set_ylabel('Time per operation (ms)', fontsize=12)
+    ax1.set_title('Performance Comparison: LVec vs vector package', fontsize=14, pad=15)
+    ax1.grid(True, which='both', linestyle='--', alpha=0.7)
+    ax1.legend(fontsize=12)
+    ax1.tick_params(labelsize=10)
     
     # Bottom plot: memory usage
-    ax3 = fig.add_subplot(gs[2], sharex=ax1)
-    ax3.plot(sizes, lvec_memory, 'o-', label='LVec')
-    ax3.plot(sizes, vector_memory, 'o-', label='vector')
-    ax3.set_xscale('log')
-    ax3.set_yscale('log')
-    ax3.set_xlabel('Array Size')
-    ax3.set_ylabel('Memory Usage (MB)')
-    ax3.grid(True)
-    ax3.legend()
+    ax2 = fig.add_subplot(gs[1])
+    ax2.plot(sizes, lvec_memory, 'o-', label='LVec', color='#2ecc71', linewidth=2, markersize=8)
+    ax2.plot(sizes, vector_memory, 'o-', label='vector', color='#e74c3c', linewidth=2, markersize=8)
+    ax2.set_xscale('log')
+    ax2.set_yscale('log')
+    ax2.set_xlabel('Array Size', fontsize=12)
+    ax2.set_ylabel('Memory Usage (MB)', fontsize=12)
+    ax2.grid(True, which='both', linestyle='--', alpha=0.7)
+    ax2.legend(fontsize=12)
+    ax2.tick_params(labelsize=10)
     
-    plt.savefig('benchmark_results.png', dpi=300, bbox_inches='tight')
+    # Add minor gridlines
+    ax1.grid(True, which='minor', linestyle=':', alpha=0.4)
+    ax2.grid(True, which='minor', linestyle=':', alpha=0.4)
+    
+    plt.savefig('benchmark_results.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == '__main__':
     # Test with different array sizes
-    sizes = [10, 100, 1000, 10000, 100000, 1000000]
+    sizes = [10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
     lvec_times, lvec_errors, vector_times, vector_errors, lvec_memory, vector_memory = benchmark_lvec_vs_vector(sizes)
     plot_results(sizes, (lvec_times, lvec_errors, lvec_memory), 
                 (vector_times, vector_errors, vector_memory))
