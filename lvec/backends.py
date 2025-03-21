@@ -82,4 +82,8 @@ def backend_atan2(y, x, lib):
 
 def backend_log(x, lib):
     """Compute natural logarithm using appropriate backend."""
-    return ak.log(x) if lib == 'ak' else np.log(x)
+    return np.log(x)
+
+def backend_exp(x, lib):
+    """Compute exponential using appropriate backend."""
+    return np.exp(x)
