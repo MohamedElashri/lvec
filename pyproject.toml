@@ -48,3 +48,8 @@ addopts = "-v"
 
 [tool.hatch.build.targets.wheel]
 packages = ["lvec"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]
