@@ -50,13 +50,13 @@ v4 = v1 * 2.0
 
 ### 2D Vectors
 ```python
-from lvec import LVec2D
+from lvec import Vector2D
 
 # Create a 2D vector
-vec2d = LVec2D(x=3.0, y=4.0)
+vec2d = Vector2D(x=3.0, y=4.0)
 
 # Access properties
-print(f"Magnitude: {vec2d.magnitude}")
+print(f"Magnitude: {vec2d.r}")
 print(f"Angle (phi): {vec2d.phi}")
 
 # Rotate vector
@@ -65,13 +65,13 @@ rotated = vec2d.rotate(angle=np.pi/4)  # 45 degrees rotation
 
 ### 3D Vectors
 ```python
-from lvec import LVec3D
+from lvec import Vector3D
 
 # Create a 3D vector
-vec3d = LVec3D(x=1.0, y=2.0, z=3.0)
+vec3d = Vector3D(x=1.0, y=2.0, z=3.0)
 
 # Access properties
-print(f"Magnitude: {vec3d.magnitude}")
+print(f"Magnitude: {vec3d.r}")
 print(f"Theta: {vec3d.theta}")
 print(f"Phi: {vec3d.phi}")
 
@@ -112,22 +112,22 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 | `E` | Get energy | - | `float` |
 | `p` | Get total momentum | - | `float` |
 
-### 2D Vector (Vec2D) Methods
+### 2D Vector (Vector2D) Methods
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|----------|
-| `__init__` | Create a 2D vector | `x, y` | `Vec2D` |
+| `__init__` | Create a 2D vector | `x, y` | `Vector2D` |
 | `x` | Get x component | - | `float` |
 | `y` | Get y component | - | `float` |
 | `r` | Get vector magnitude | - | `float` |
 | `phi` | Get azimuthal angle | - | `float` |
 | `dot` | Compute dot product | `other` | `float` |
 
-### 3D Vector (Vec3D) Methods
+### 3D Vector (Vector3D) Methods
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|----------|
-| `__init__` | Create a 3D vector | `x, y, z` | `Vec3D` |
+| `__init__` | Create a 3D vector | `x, y, z` | `Vector3D` |
 | `x` | Get x component | - | `float` |
 | `y` | Get y component | - | `float` |
 | `z` | Get z component | - | `float` |
@@ -136,7 +136,7 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 | `phi` | Get azimuthal angle | - | `float` |
 | `theta` | Get polar angle | - | `float` |
 | `dot` | Compute dot product | `other` | `float` |
-| `cross` | Compute cross product | `other` | `Vec3D` |
+| `cross` | Compute cross product | `other` | `Vector3D` |
 
 ## Requirements
 

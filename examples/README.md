@@ -81,8 +81,8 @@ Demonstrates operations with 2D vectors:
 
 ```python
 # Create 2D vectors
-vec1 = LVec2D(x1, y1)
-vec2 = LVec2D(x2, y2)
+vec1 = Vector2D(x1, y1)
+vec2 = Vector2D(x2, y2)
 
 # Calculate angle between vectors
 angle = vec1.angle(vec2)
@@ -97,7 +97,7 @@ Shows how to work with 3D vectors:
 
 ```python
 # Create and manipulate 3D vectors
-vec3d = LVec3D(x, y, z)
+vec3d = Vector3D(x, y, z)
 rotated = vec3d.rotate(theta, axis)
 ```
 
