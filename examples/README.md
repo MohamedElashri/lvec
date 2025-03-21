@@ -72,7 +72,36 @@ beta_x = -Z.px/Z.E
 muon1_rest = muon1.boost(beta_x, beta_y, beta_z)
 ```
 
-### 5. LHCb Analysis (`lhcb_data.py`)
+### 5. 2D Vectors (`05_2d_vectors.py`)
+Demonstrates operations with 2D vectors:
+- Creating and manipulating 2D vectors
+- Calculating angles and rotations in 2D
+- Vector addition and scalar multiplication
+- Computing dot products and cross products
+
+```python
+# Create 2D vectors
+vec1 = LVec2D(x1, y1)
+vec2 = LVec2D(x2, y2)
+
+# Calculate angle between vectors
+angle = vec1.angle(vec2)
+```
+
+### 6. 3D Vectors (`06_3d_vectors.py`)
+Shows how to work with 3D vectors:
+- Basic 3D vector operations
+- 3D rotations and transformations
+- Vector algebra in 3D space
+- Spatial geometry calculations
+
+```python
+# Create and manipulate 3D vectors
+vec3d = LVec3D(x, y, z)
+rotated = vec3d.rotate(theta, axis)
+```
+
+### 7. LHCb Analysis (`lhcb_data.py`)
 Demonstrates how to:
 - Work with real LHCb open data (B→hhh decay)
 - Calculate two-body invariant masses
@@ -162,6 +191,60 @@ Original Z mass: 91.20 GeV
 Boosted Z mass: 0.22 GeV
 
 Mean cos(theta) in rest frame: -0.007
+```
+
+### 2D Vectors
+
+```
+=== 2D Vector Operations with NumPy Backend ===
+
+Vector components (x, y): ([1. 2. 3.], [4. 5. 6.])
+Magnitude: [4.12310563 5.38516481 6.70820393]
+Azimuthal angle (phi): [1.32581766 1.19028995 1.10714872]
+
+Vector Operations:
+v1 + v2: ([6. 8.], [10. 12.])
+v1 · v2 (dot product): [26. 44.]
+
+=== 2D Vector Operations with Awkward Backend ===
+
+Vector components (x, y): ([1, 2, 3], [4, 5, 6])
+Magnitude: [4.12, 5.39, 6.71]
+Azimuthal angle (phi): [1.33, 1.19, 1.11]
+
+Vector Operations:
+v1 + v2: ([6, 8], [10, 12])
+v1 · v2 (dot product): [26, 44]
+```
+
+### 3D Vectors
+
+```
+=== 3D Vector Operations with NumPy Backend ===
+
+Vector components (x, y, z): ([1. 2. 3.], [4. 5. 6.], [7. 8. 9.])
+Magnitude: [ 8.1240384   9.64365076 11.22497216]
+Cylindrical radius (rho): [4.12310563 5.38516481 6.70820393]
+Azimuthal angle (phi): [1.32581766 1.19028995 1.10714872]
+Polar angle (theta): [0.5323032  0.59247462 0.64052231]
+
+Vector Operations:
+v1 + v2: ([ 8. 10.], [12. 14.], [16. 18.])
+v1 · v2 (dot product): [ 89. 128.]
+v1 × v2 (cross product): ([-12. -12.], [24. 24.], [-12. -12.])
+
+=== 3D Vector Operations with Awkward Backend ===
+
+Vector components (x, y, z): ([1, 2, 3], [4, 5, 6], [7, 8, 9])
+Magnitude: [8.12, 9.64, 11.2]
+Cylindrical radius (rho): [4.12, 5.39, 6.71]
+Azimuthal angle (phi): [1.33, 1.19, 1.11]
+Polar angle (theta): [0.532, 0.592, 0.641]
+
+Vector Operations:
+v1 + v2: ([8, 10], [12, 14], [16, 18])
+v1 · v2 (dot product): [89, 128]
+v1 × v2 (cross product): ([-12, -12], [24, 24], [-12, -12])
 ```
 
 ### LHCb Analysis
