@@ -7,11 +7,11 @@
 
 > ⚠️ This project is a work in progress
 
-A Python package for seamless handling of Lorentz vectors in High Energy Physics analysis, bridging the gap between Scikit-HEP and ROOT CERN ecosystems.
+A Python package for seamless handling of Lorentz vectors, 2D vectors, and 3D vectors in HEP analysis, bridging the gap between Scikit-HEP and ROOT ecosystems.
 
 ## Motivation
 
-LVec aims to simplify High Energy Physics analysis by providing a unified interface for working with Lorentz vectors across different frameworks. It seamlessly integrates with both the Scikit-HEP ecosystem (uproot, vector, awkward) and ROOT/PyROOT, enabling physicists to write more maintainable and efficient analysis code.
+LVec aims to simplify HEP analysis by providing a unified interface for working with various vector types across different frameworks. It seamlessly integrates with both the Scikit-HEP ecosystem (uproot, vector, awkward) and ROOT/PyROOT, enabling physicists to write more maintainable and efficient analysis code.
 
 ## Installation
 
@@ -19,8 +19,16 @@ LVec aims to simplify High Energy Physics analysis by providing a unified interf
 pip install lvec
 ```
 
+For development installation:
+```bash
+git clone https://github.com/MohamedElashri/lvec
+cd lvec
+pip install -e ".[dev]"
+```
+
 ## Quick Start
 
+### Lorentz Vectors
 ```python
 from lvec import LVec
 import numpy as np
@@ -38,7 +46,41 @@ v2 = LVec.from_ptepm(pt=5.0, eta=0.0, phi=0.0, m=1.0)
 # Vector operations
 v3 = v1 + v2
 v4 = v1 * 2.0
+```
 
+### 2D Vectors
+```python
+from lvec import LVec2D
+
+# Create a 2D vector
+vec2d = LVec2D(x=3.0, y=4.0)
+
+# Access properties
+print(f"Magnitude: {vec2d.magnitude}")
+print(f"Angle (phi): {vec2d.phi}")
+
+# Rotate vector
+rotated = vec2d.rotate(angle=np.pi/4)  # 45 degrees rotation
+```
+
+### 3D Vectors
+```python
+from lvec import LVec3D
+
+# Create a 3D vector
+vec3d = LVec3D(x=1.0, y=2.0, z=3.0)
+
+# Access properties
+print(f"Magnitude: {vec3d.magnitude}")
+print(f"Theta: {vec3d.theta}")
+print(f"Phi: {vec3d.phi}")
+
+# Rotate around axis
+rotated = vec3d.rotate(theta=np.pi/2, axis=[0, 1, 0])  # 90 degrees around y-axis
+```
+
+### Array Operations
+```python
 # Works with numpy arrays
 px = np.array([1.0, 2.0, 3.0])
 py = np.array([2.0, 3.0, 4.0])
@@ -53,90 +95,91 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 
 ## Available Methods
 
-### Constructors
+### Lorentz Vector (LVec) Methods
 
-| Method | Description |
-|--------|-------------|
-| `LVec(px, py, pz, E)` | Create from Cartesian components |
-| `from_p4(px, py, pz, E)` | Alternative constructor using Cartesian components |
-| `from_ptepm(pt, eta, phi, m)` | Create from pt, eta, phi, mass |
-| `from_ary(ary_dict)` | Create from dictionary with px, py, pz, E keys |
-| `from_vec(vobj)` | Create from another vector-like object |
+| Method | Description | Parameters | Returns |
+|--------|-------------|------------|----------|
+| `__init__` | Create a Lorentz vector | `px, py, pz, E` | `LVec` |
+| `from_ptepm` | Create from pt, eta, phi, mass | `pt, eta, phi, m` | `LVec` |
+| `from_p4` | Create from px, py, pz, E | `px, py, pz, E` | `LVec` |
+| `from_ary` | Create from dictionary | `ary_dict` with px, py, pz, E keys | `LVec` |
+| `from_vec` | Create from vector-like object | `vobj` with px, py, pz, E attributes | `LVec` |
+| `boost` | Boost vector to new frame | `bx, by, bz` | `LVec` |
+| `mass` | Get invariant mass | - | `float` |
+| `pt` | Get transverse momentum | - | `float` |
+| `eta` | Get pseudorapidity | - | `float` |
+| `phi` | Get azimuthal angle | - | `float` |
+| `E` | Get energy | - | `float` |
+| `p` | Get total momentum | - | `float` |
 
-### Properties
+### 2D Vector (Vec2D) Methods
 
-| Property | Description |
-|----------|-------------|
-| `px, py, pz` | Momentum components |
-| `E` | Energy |
-| `pt` | Transverse momentum |
-| `p` | Total momentum |
-| `mass` | Invariant mass |
-| `phi` | Azimuthal angle |
-| `eta` | Pseudorapidity |
+| Method | Description | Parameters | Returns |
+|--------|-------------|------------|----------|
+| `__init__` | Create a 2D vector | `x, y` | `Vec2D` |
+| `x` | Get x component | - | `float` |
+| `y` | Get y component | - | `float` |
+| `r` | Get vector magnitude | - | `float` |
+| `phi` | Get azimuthal angle | - | `float` |
+| `dot` | Compute dot product | `other` | `float` |
 
-### Operations
+### 3D Vector (Vec3D) Methods
 
-| Operation | Description |
-|-----------|-------------|
-| `+` | Vector addition |
-| `-` | Vector subtraction |
-| `*` | Scalar multiplication |
-| `[]` | Array indexing |
-
-### Transformations
-
-| Method | Description |
-|--------|-------------|
-| `boost(bx, by, bz)` | General Lorentz boost |
-| `boostz(bz)` | Boost along z-axis |
-| `rotx(angle)` | Rotation around x-axis |
-| `roty(angle)` | Rotation around y-axis |
-| `rotz(angle)` | Rotation around z-axis |
-
-### Conversions
-
-| Method | Description |
-|--------|-------------|
-| `to_p4()` | Get (px, py, pz, E) tuple |
-| `to_ptepm()` | Get (pt, eta, phi, mass) tuple |
-| `to_np()` | Convert to NumPy arrays |
-| `to_ak()` | Convert to Awkward arrays |
-| `to_root_dict()` | Convert to ROOT-compatible dictionary |
-
-## Advanced Usage
-
-LVec supports both NumPy and Awkward array backends, automatically choosing the appropriate backend based on input types. It provides efficient caching of derived properties and handles array broadcasting.
-
-Examples of advanced usage can be found in the [examples](examples/) directory.
-
-## Contributing
-
-Contributions are welcome! Please feel free to:
-- Report issues
-- Submit pull requests
-- Suggest new features
-- Share feedback
+| Method | Description | Parameters | Returns |
+|--------|-------------|------------|----------|
+| `__init__` | Create a 3D vector | `x, y, z` | `Vec3D` |
+| `x` | Get x component | - | `float` |
+| `y` | Get y component | - | `float` |
+| `z` | Get z component | - | `float` |
+| `r` | Get vector magnitude | - | `float` |
+| `rho` | Get cylindrical radius | - | `float` |
+| `phi` | Get azimuthal angle | - | `float` |
+| `theta` | Get polar angle | - | `float` |
+| `dot` | Compute dot product | `other` | `float` |
+| `cross` | Compute cross product | `other` | `Vec3D` |
 
 ## Requirements
 
-- Python 3.10+ (due to numpy requirement)
-- NumPy
-- Awkward Array (optional, for Awkward array support)
+- Python >= 3.10
+- NumPy >= 1.20.0
+- Awkward >= 2.0.0
 
-## License
+For development:
+- pytest >= 7.0.0
+- uproot >= 5.0.0
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
-## Citing
+## Citation
 
 If you use LVec in your research, please cite:
 
 ```bibtex
-@software{lvec,
-  author = {Mohamed Elashri},
-  title = {LVec: A Python Package for Lorentz Vector Analysis},
-  year = {2024},
-  url = {https://github.com/MohamedElashri/lvec}
+@software{lvec2024,
+  author       = {Mohamed Elashri},
+  title        = {LVec: A Python package for handling Lorentz vectors},
+  year         = {2024},
+  publisher    = {GitHub},
+  url          = {https://github.com/MohamedElashri/lvec}
 }
 ```
+
+## Documentation
+
+For detailed documentation and examples, visit our [documentation page](https://github.com/MohamedElashri/lvec/tree/main/docs).
+
+## Examples
+
+Check out our [examples directory](https://github.com/MohamedElashri/lvec/tree/main/examples) for comprehensive examples including:
+- Basic vector operations
+- Decay reconstructions
+- Frame transformations
+- 2D vector manipulations
+- 3D spatial analysis
+- Advanced selections
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
