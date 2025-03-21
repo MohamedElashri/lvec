@@ -2,7 +2,8 @@
 import numpy as np
 from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_sin, backend_cos, backend_atan2,
-                      backend_sinh, backend_cosh, backend_log)
+                      backend_sinh, backend_cosh, backend_log,
+                      backend_where)
 from .exceptions import ShapeError, BackendError
 
 def ensure_array(*args):
@@ -132,9 +133,28 @@ def compute_p(px, py, pz, lib):
 
 
 def compute_mass(E, p, lib):
-    """Compute mass from energy and momentum."""
+    """Compute mass from energy and momentum.
+    
+    For physical particles, m² = E² - p² should be positive. When negative values
+    are encountered due to numerical inaccuracies, a warning is issued and the
+    absolute value is used.
+    """
+    import warnings
     m2 = E*E - p*p
-    m = backend_sqrt(m2 * (m2 > 0), lib)
+    
+    # Check for negative m² values
+    if isinstance(m2, (float, int)):
+        if m2 < 0:
+            warnings.warn(f"Negative m² value encountered: {m2}. Taking absolute value, but this may indicate unphysical particles or numerical issues.")
+            m2 = abs(m2)
+    else:
+        # For array inputs, use backend_where to handle negative values
+        has_negative = (m2 < 0)
+        if hasattr(has_negative, '__iter__') and any(has_negative) or not hasattr(has_negative, '__iter__') and has_negative:
+            warnings.warn("Negative m² values encountered. Taking absolute values, but this may indicate unphysical particles or numerical issues.")
+            m2 = backend_where(m2 < 0, abs(m2), m2, lib)
+    
+    m = backend_sqrt(m2, lib)
     if isinstance(E, (float, int)) and isinstance(p, (float, int)):
         return float(m)
     return m
