@@ -2,7 +2,7 @@
 import numpy as np
 from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_sin, backend_cos, backend_atan2,
-                      backend_sinh, backend_cosh)
+                      backend_sinh, backend_cosh, backend_log)
 from .exceptions import ShapeError, BackendError
 
 def ensure_array(*args):

@@ -82,10 +82,14 @@ def backend_atan2(y, x, lib):
 
 def backend_log(x, lib):
     """Compute natural logarithm using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.log(x)
     return np.log(x)
 
 def backend_exp(x, lib):
     """Compute exponential using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.exp(x)
     return np.exp(x)
 
 def backend_tan(x, lib):
