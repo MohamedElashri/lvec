@@ -120,7 +120,7 @@ Contributions are welcome! Please feel free to:
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+ (due to numpy requirement)
 - NumPy
 - Awkward Array (optional, for Awkward array support)
 

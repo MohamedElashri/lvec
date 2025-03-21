@@ -15,7 +15,7 @@
 LVec is a Python package designed for High Energy Physics (HEP) analysis, providing a unified interface for handling Lorentz vectors. It bridges the gap between different HEP ecosystems (Scikit-HEP and ROOT) and supports both NumPy and Awkward array backends.
 
 ### Dependencies
-- Python 3.8+
+- Python 3.10+ (due to numpy requirement)
 - NumPy (required)
 - Awkward Array (optional, for Awkward array support)
 
