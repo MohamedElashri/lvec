@@ -87,3 +87,9 @@ def backend_log(x, lib):
 def backend_exp(x, lib):
     """Compute exponential using appropriate backend."""
     return np.exp(x)
+
+def backend_tan(x, lib):
+    """Compute tangent using appropriate backend."""
+    if isinstance(x, (float, int)):
+        return np.tan(x)
+    return np.tan(x)

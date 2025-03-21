@@ -101,7 +101,17 @@ def compute_mass(E, p, lib):
 def compute_eta(p, pz, lib):
     """Compute pseudorapidity."""
     pt = compute_pt(p, pz, lib)
-    eta = backend_atan2(pt, pz, lib)
+    # Pseudorapidity is defined as η = -ln(tan(θ/2)) where θ is the polar angle
+    # The polar angle θ is the angle between the momentum vector and the z-axis
+    # θ = arctan(pt/pz), so we need to compute arctan(pt/pz) first
+    # For numerical stability, use the formula η = 0.5 * ln((p + pz)/(p - pz))
+    # This avoids issues when pz approaches ±p
+    
+    # Handle the case where pz = ±p (θ = 0 or π)
+    # When pz = p, η = ∞
+    # When pz = -p, η = -∞
+    # Use a numerically stable formula
+    eta = 0.5 * backend_log((p + pz)/(p - pz + 1e-10), lib)
     if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
         return float(eta)
     return eta
