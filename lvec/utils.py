@@ -6,7 +6,13 @@ from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
 from .exceptions import ShapeError, BackendError
 
 def ensure_array(*args):
-    """Convert inputs to consistent array type."""
+    """
+    Convert inputs to consistent array type.
+    
+    For Awkward arrays, this function will ensure that not only the outer dimensions 
+    match, but also that any jagged (variable-length) inner dimensions are consistent
+    when used in vectorized operations.
+    """
     try:
         # Check for None values first
         if any(x is None for x in args):
@@ -57,6 +63,7 @@ def check_shapes(*arrays):
         return
         
     if lib == 'ak':
+        # First check outer lengths
         array_lengths = [len(arr) if not isinstance(arr, (float, int)) and arr is not None else 1 
                         for arr in arrays]
         if not all(l == array_lengths[0] for l in array_lengths):
@@ -64,6 +71,41 @@ def check_shapes(*arrays):
                 "Inconsistent array lengths in Awkward arrays",
                 shapes=shape_info
             )
+        
+        # Filter out scalars and None values
+        valid_arrays = [arr for arr in arrays if not isinstance(arr, (float, int)) and arr is not None]
+        
+        if valid_arrays and all(is_ak(arr) for arr in valid_arrays):
+            import awkward as ak
+            
+            # Check if arrays are jagged by examining their structure
+            is_jagged = False
+            for arr in valid_arrays:
+                if any(isinstance(arr[i], ak.Array) and len(arr[i]) > 0 for i in range(len(arr))):
+                    is_jagged = True
+                    break
+            
+            # For jagged arrays, we need to verify that the inner dimensions are consistent
+            if is_jagged:
+                # For each outer index
+                for i in range(len(valid_arrays[0])):
+                    lengths = []
+                    
+                    # Get the length of each array at this index
+                    for arr in valid_arrays:
+                        try:
+                            if isinstance(arr[i], ak.Array) or hasattr(arr[i], '__len__'):
+                                lengths.append(len(arr[i]))
+                        except (TypeError, IndexError):
+                            # If we can't get a length, this array might be scalar at this position
+                            lengths.append(1)
+                    
+                    # If there are differing lengths at this index, raise an error
+                    if len(set(lengths)) > 1:  # Use set to find unique values
+                        raise ShapeError(
+                            f"Inconsistent inner dimensions in jagged Awkward arrays at index {i}",
+                            shapes=[f"Found lengths: {lengths}"]
+                        )
     else:
         array_shapes = [arr.shape if hasattr(arr, 'shape') and arr is not None else ()
                        for arr in arrays]
