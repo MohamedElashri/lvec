@@ -6,6 +6,7 @@ from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
                    compute_pt, compute_p, compute_mass, compute_eta, compute_phi)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
+from .caching import PropertyCache
 import numpy as np
 
 
@@ -17,8 +18,7 @@ class LVec:
         px, py, pz: Momentum components
         E: Energy
         _lib: Backend library ('np' or 'ak')
-        _cache: Dictionary storing computed properties
-        _version: Cache version counter
+        _cache: Property caching system for optimized property calculations
     """
     
     def __init__(self, px, py, pz, E):
@@ -52,8 +52,22 @@ class LVec:
             elif self._lib == 'ak' and ak.any(self._E < 0):
                 raise InputError("E", "array", "energy values must be non-negative")
                 
-        self._cache = {}
-        self._version = 0
+        # Initialize the enhanced caching system
+        self._cache = PropertyCache()
+        
+        # Register property dependencies
+        self._cache.register_dependency('pt', ['px', 'py'])
+        self._cache.register_dependency('p', ['px', 'py', 'pz'])
+        self._cache.register_dependency('mass', ['px', 'py', 'pz', 'E'])
+        self._cache.register_dependency('phi', ['px', 'py'])
+        self._cache.register_dependency('eta', ['px', 'py', 'pz'])
+        
+        # Register intermediate calculation dependencies
+        self._cache.register_dependency('px_squared', ['px'])
+        self._cache.register_dependency('py_squared', ['py'])
+        self._cache.register_dependency('pz_squared', ['pz'])
+        self._cache.register_dependency('p_squared', ['px', 'py', 'pz'])
+        self._cache.register_dependency('pt_squared', ['px', 'py'])
         
     @classmethod
     def from_p4(cls, px, py, pz, E):
@@ -81,63 +95,185 @@ class LVec:
     
     def clear_cache(self):
         """Clear the computed property cache."""
-        self._cache.clear()
+        self._cache.clear_cache()
 
     def touch(self):
-        """Invalidate cache by incrementing version."""
-        self._version += 1
-        self.clear_cache()  # Directly clear the cache after incrementing version to ensure complete invalidation
+        """
+        Mark all components as modified, invalidating all cached properties.
+        For backward compatibility with previous API.
+        """
+        self._cache.touch_component('px')
+        self._cache.touch_component('py')
+        self._cache.touch_component('pz')
+        self._cache.touch_component('E')
             
-    def _get_cached(self, key, func):
-        """Get cached value or compute and cache it."""
-        entry = self._cache.get(key)
-        if entry is None or entry['version'] != self._version:
-            val = func()
-            self._cache[key] = {'val': val, 'version': self._version}
-            return val
-        return entry['val']
+    def _get_cached(self, key, func, dependencies=None):
+        """
+        Get cached value or compute and cache it.
+        
+        Args:
+            key: Property or intermediate result name
+            func: Function to compute the value if not cached
+            dependencies: List of components this value depends on (if not already registered)
+            
+        Returns:
+            The cached or computed value
+        """
+        return self._cache.get_cached(key, func, dependencies)
+    
+    def _get_intermediate(self, key, func):
+        """
+        Get or compute an intermediate result for reuse across properties.
+        
+        Args:
+            key: Intermediate result identifier
+            func: Function to compute the result
+            
+        Returns:
+            The intermediate result
+        """
+        return self._cache.get_intermediate(key, func)
     
     @property
-    def px(self): return self._px
+    def px(self): 
+        return self._px
     
     @property
-    def py(self): return self._py
+    def py(self): 
+        return self._py
     
     @property
-    def pz(self): return self._pz
+    def pz(self): 
+        return self._pz
     
     @property
-    def E(self): return self._E
+    def E(self): 
+        return self._E
+    
+    # Cached intermediate calculations for reuse
+    def _px_squared(self):
+        return self._get_intermediate('px_squared', lambda: self._px**2)
+    
+    def _py_squared(self):
+        return self._get_intermediate('py_squared', lambda: self._py**2)
+    
+    def _pz_squared(self):
+        return self._get_intermediate('pz_squared', lambda: self._pz**2)
+    
+    def _pt_squared(self):
+        return self._get_intermediate('pt_squared', 
+                                    lambda: self._px_squared() + self._py_squared())
+    
+    def _p_squared(self):
+        return self._get_intermediate('p_squared', 
+                                    lambda: self._pt_squared() + self._pz_squared())
     
     @property
     def pt(self):
         """Transverse momentum."""
         return self._get_cached('pt', 
-                              lambda: compute_pt(self._px, self._py, self._lib))
+                             lambda: backend_sqrt(self._pt_squared(), self._lib),
+                             ['px', 'py'])
     
     @property
     def p(self):
         """Total momentum magnitude."""
         return self._get_cached('p', 
-                              lambda: compute_p(self._px, self._py, self._pz, self._lib))
+                             lambda: backend_sqrt(self._p_squared(), self._lib),
+                             ['px', 'py', 'pz'])
     
     @property
     def mass(self):
         """Invariant mass."""
-        return self._get_cached('mass',
-                              lambda: compute_mass(self._E, self.p, self._lib))
+        def calc_mass():
+            # E² - p² calculation optimized with intermediate results
+            E_squared = self._E**2
+            p_squared = self._p_squared()
+            m_squared = E_squared - p_squared
+            
+            # Handle numerical precision issues (for physical particles, m² should be ≥ 0)
+            if isinstance(m_squared, (float, int)):
+                if m_squared < 0:
+                    if abs(m_squared) < 1e-10:  # Small tolerance for numerical precision
+                        m_squared = 0
+                    # Large negative values are a problem
+                    elif m_squared < -1e-6:
+                        import warnings
+                        warnings.warn(f"Mass calculation resulted in negative m²={m_squared}")
+                        m_squared = abs(m_squared)
+            else:
+                # Array case
+                if self._lib == 'np':
+                    if (m_squared < 0).any():
+                        # Check for numerically significant negative values
+                        problematic = (m_squared < -1e-6)
+                        if problematic.any():
+                            import warnings
+                            warnings.warn("Mass calculation resulted in negative m² values")
+                        # Take absolute value to ensure physical result
+                        m_squared = np.where(m_squared < 0, abs(m_squared), m_squared)
+                elif self._lib == 'ak':
+                    import awkward as ak
+                    if ak.any(m_squared < 0):
+                        problematic = (m_squared < -1e-6)
+                        if ak.any(problematic):
+                            import warnings
+                            warnings.warn("Mass calculation resulted in negative m² values")
+                        # Take absolute value with the appropriate backend
+                        m_squared = ak.where(m_squared < 0, abs(m_squared), m_squared)
+            
+            return backend_sqrt(m_squared, self._lib)
+        
+        return self._get_cached('mass', calc_mass, ['px', 'py', 'pz', 'E'])
     
     @property
     def phi(self):
         """Azimuthal angle."""
         return self._get_cached('phi',
-                              lambda: compute_phi(self._px, self._py, self._lib))
+                             lambda: backend_atan2(self._py, self._px, self._lib),
+                             ['px', 'py'])
     
     @property
     def eta(self):
         """Pseudorapidity."""
-        return self._get_cached('eta',
-                              lambda: compute_eta(self.p, self._pz, self._lib))
+        def calc_eta():
+            p = self.p  # This will use our cached property
+            pz = self._pz
+            # Use a small epsilon to avoid division by zero
+            epsilon = 1e-10
+            
+            if self._lib == 'np':
+                # For NumPy, handle scalar and array cases
+                if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
+                    if abs(p - abs(pz)) < epsilon:
+                        # When p ≈ |pz|, the particle is along the beam axis
+                        return float('inf') if pz >= 0 else float('-inf')
+                    # Numerically stable formula for eta
+                    return 0.5 * np.log((p + pz) / (p - pz))
+                else:
+                    # Array case with mask for special values
+                    near_beam = (abs(p - abs(pz)) < epsilon)
+                    # First compute the standard formula
+                    result = 0.5 * np.log((p + pz) / (p - pz + epsilon))
+                    # Then correct special cases (if any)
+                    if near_beam.any():
+                        result = np.where(near_beam & (pz >= 0), np.inf, result)
+                        result = np.where(near_beam & (pz < 0), -np.inf, result)
+                    return result
+            else:
+                # For Awkward arrays
+                import awkward as ak
+                # Define a small epsilon to avoid division by zero
+                near_beam = (abs(p - abs(pz)) < epsilon)
+                # Compute the standard formula
+                result = 0.5 * backend_log((p + pz) / (p - pz + epsilon), self._lib)
+                # Correct special cases
+                if ak.any(near_beam):
+                    result = ak.where(near_beam & (pz >= 0), np.inf, result)
+                    result = ak.where(near_beam & (pz < 0), -np.inf, result)
+                return result
+                
+        return self._get_cached('eta', calc_eta, ['px', 'py', 'pz'])
     
     def __add__(self, other):
         """Add two Lorentz vectors."""

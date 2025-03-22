@@ -3,6 +3,7 @@ from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_sin, backend_cos, backend_atan2)
 from .utils import (ensure_array, check_shapes, compute_pt, compute_p)
 from .exceptions import ShapeError, InputError, BackendError
+from .caching import PropertyCache
 
 class Vec2D:
     """2D Vector class supporting both NumPy and Awkward array backends.
@@ -10,8 +11,7 @@ class Vec2D:
     Attributes:
         x, y: Vector components
         _lib: Backend library ('np' or 'ak')
-        _cache: Dictionary storing computed properties
-        _version: Cache version counter
+        _cache: Property caching system for optimized property calculations
     """
     
     def __init__(self, x, y):
@@ -23,26 +23,52 @@ class Vec2D:
                 raise
             raise BackendError("initialization", self._lib, str(e))
             
-        self._cache = {}
-        self._version = 0
+        # Initialize the enhanced caching system
+        self._cache = PropertyCache()
+        
+        # Register property dependencies
+        self._cache.register_dependency('r', ['x', 'y'])
+        self._cache.register_dependency('phi', ['x', 'y'])
+        
+        # Register intermediate calculation dependencies
+        self._cache.register_dependency('x_squared', ['x'])
+        self._cache.register_dependency('y_squared', ['y'])
         
     def clear_cache(self):
         """Clear the computed property cache."""
-        self._cache.clear()
+        self._cache.clear_cache()
 
     def touch(self):
-        """Invalidate cache by incrementing version."""
-        self._version += 1
-        self.clear_cache()  # Directly clear the cache after incrementing version to ensure complete invalidation
+        """Invalidate cache by marking all components as modified."""
+        self._cache.touch_component('x')
+        self._cache.touch_component('y')
             
-    def _get_cached(self, key, func):
-        """Get cached value or compute and cache it."""
-        entry = self._cache.get(key)
-        if entry is None or entry['version'] != self._version:
-            val = func()
-            self._cache[key] = {'val': val, 'version': self._version}
-            return val
-        return entry['val']
+    def _get_cached(self, key, func, dependencies=None):
+        """
+        Get cached value or compute and cache it.
+        
+        Args:
+            key: Property or intermediate result name
+            func: Function to compute the value if not cached
+            dependencies: List of components this value depends on (if not already registered)
+            
+        Returns:
+            The cached or computed value
+        """
+        return self._cache.get_cached(key, func, dependencies)
+    
+    def _get_intermediate(self, key, func):
+        """
+        Get or compute an intermediate result for reuse across properties.
+        
+        Args:
+            key: Intermediate result identifier
+            func: Function to compute the result
+            
+        Returns:
+            The intermediate result
+        """
+        return self._cache.get_intermediate(key, func)
     
     @property
     def x(self): return self._x
@@ -50,17 +76,30 @@ class Vec2D:
     @property
     def y(self): return self._y
     
+    # Cached intermediate calculations for reuse
+    def _x_squared(self):
+        return self._get_intermediate('x_squared', lambda: self._x**2)
+    
+    def _y_squared(self):
+        return self._get_intermediate('y_squared', lambda: self._y**2)
+    
     @property
     def r(self):
         """Magnitude of the vector."""
-        return self._get_cached('r', 
-                              lambda: backend_sqrt(self._x**2 + self._y**2, self._lib))
+        def calculate_r():
+            # Use cached intermediate calculations
+            x_squared = self._x_squared()
+            y_squared = self._y_squared()
+            return backend_sqrt(x_squared + y_squared, self._lib)
+            
+        return self._get_cached('r', calculate_r, ['x', 'y'])
     
     @property
     def phi(self):
         """Azimuthal angle."""
         return self._get_cached('phi',
-                              lambda: backend_atan2(self._y, self._x, self._lib))
+                              lambda: backend_atan2(self._y, self._x, self._lib),
+                              ['x', 'y'])
     
     def __add__(self, other):
         """Add two vectors."""
@@ -103,8 +142,7 @@ class Vec3D:
     Attributes:
         x, y, z: Vector components
         _lib: Backend library ('np' or 'ak')
-        _cache: Dictionary storing computed properties
-        _version: Cache version counter
+        _cache: Property caching system for optimized property calculations
     """
     
     def __init__(self, x, y, z):
@@ -116,26 +154,57 @@ class Vec3D:
                 raise
             raise BackendError("initialization", self._lib, str(e))
             
-        self._cache = {}
-        self._version = 0
+        # Initialize the enhanced caching system
+        self._cache = PropertyCache()
         
+        # Register property dependencies
+        self._cache.register_dependency('r', ['x', 'y', 'z'])
+        self._cache.register_dependency('rho', ['x', 'y'])
+        self._cache.register_dependency('phi', ['x', 'y'])
+        self._cache.register_dependency('theta', ['x', 'y', 'z'])
+        
+        # Register intermediate calculation dependencies
+        self._cache.register_dependency('x_squared', ['x'])
+        self._cache.register_dependency('y_squared', ['y'])
+        self._cache.register_dependency('z_squared', ['z'])
+        self._cache.register_dependency('xy_squared', ['x', 'y'])  # x² + y²
+            
     def clear_cache(self):
         """Clear the computed property cache."""
-        self._cache.clear()
+        self._cache.clear_cache()
 
     def touch(self):
-        """Invalidate cache by incrementing version."""
-        self._version += 1
-        self.clear_cache()  # Directly clear the cache after incrementing version to ensure complete invalidation
+        """Invalidate cache by marking all components as modified."""
+        self._cache.touch_component('x')
+        self._cache.touch_component('y')
+        self._cache.touch_component('z')
             
-    def _get_cached(self, key, func):
-        """Get cached value or compute and cache it."""
-        entry = self._cache.get(key)
-        if entry is None or entry['version'] != self._version:
-            val = func()
-            self._cache[key] = {'val': val, 'version': self._version}
-            return val
-        return entry['val']
+    def _get_cached(self, key, func, dependencies=None):
+        """
+        Get cached value or compute and cache it.
+        
+        Args:
+            key: Property or intermediate result name
+            func: Function to compute the value if not cached
+            dependencies: List of components this value depends on (if not already registered)
+            
+        Returns:
+            The cached or computed value
+        """
+        return self._cache.get_cached(key, func, dependencies)
+    
+    def _get_intermediate(self, key, func):
+        """
+        Get or compute an intermediate result for reuse across properties.
+        
+        Args:
+            key: Intermediate result identifier
+            func: Function to compute the result
+            
+        Returns:
+            The intermediate result
+        """
+        return self._cache.get_intermediate(key, func)
     
     @property
     def x(self): return self._x
@@ -146,29 +215,54 @@ class Vec3D:
     @property
     def z(self): return self._z
     
+    # Cached intermediate calculations for reuse
+    def _x_squared(self):
+        return self._get_intermediate('x_squared', lambda: self._x**2)
+    
+    def _y_squared(self):
+        return self._get_intermediate('y_squared', lambda: self._y**2)
+    
+    def _z_squared(self):
+        return self._get_intermediate('z_squared', lambda: self._z**2)
+    
+    def _xy_squared(self):
+        """Compute x² + y² for reuse in multiple properties."""
+        return self._get_intermediate('xy_squared', 
+                                    lambda: self._x_squared() + self._y_squared())
+    
     @property
     def r(self):
         """Magnitude of the vector."""
-        return self._get_cached('r', 
-                              lambda: backend_sqrt(self._x**2 + self._y**2 + self._z**2, self._lib))
+        def calculate_r():
+            # Use cached intermediate calculations for better efficiency
+            return backend_sqrt(self._xy_squared() + self._z_squared(), self._lib)
+            
+        return self._get_cached('r', calculate_r, ['x', 'y', 'z'])
     
     @property
     def rho(self):
         """Cylindrical radius."""
-        return self._get_cached('rho',
-                              lambda: backend_sqrt(self._x**2 + self._y**2, self._lib))
+        def calculate_rho():
+            # Use the shared intermediate calculation
+            return backend_sqrt(self._xy_squared(), self._lib)
+            
+        return self._get_cached('rho', calculate_rho, ['x', 'y'])
     
     @property
     def phi(self):
         """Azimuthal angle."""
         return self._get_cached('phi',
-                              lambda: backend_atan2(self._y, self._x, self._lib))
+                              lambda: backend_atan2(self._y, self._x, self._lib),
+                              ['x', 'y'])
     
     @property
     def theta(self):
         """Polar angle."""
-        return self._get_cached('theta',
-                              lambda: backend_atan2(self.rho, self._z, self._lib))
+        def calculate_theta():
+            # Use the cached rho property
+            return backend_atan2(self.rho, self._z, self._lib)
+            
+        return self._get_cached('theta', calculate_theta, ['x', 'y', 'z'])
     
     def __add__(self, other):
         """Add two vectors."""
