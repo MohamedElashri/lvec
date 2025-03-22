@@ -101,13 +101,10 @@ vec3d = Vector3D(x, y, z)
 rotated = vec3d.rotate(theta, axis)
 ```
 
-### 7. Jagged Arrays (`07_jagged_arrays.py`)
+### 7. Jagged Arrays handling (`07_jagged_arrays.py`)
 Shows how to:
-- Work with jagged arrays
+- Work with jagged arrays in LVec
 - Handle variable-length datasets
-- Perform operations on jagged arrays
-
-
 
 ### 8. LHCb Analysis (`08_lhcb_data.py`)
 Demonstrates how to:
@@ -123,6 +120,17 @@ h2 = LVec(h2_px, h2_py, h2_pz, calculate_energy(h2_px, h2_py, h2_pz))
 
 # Calculate two-body invariant masses
 m12 = (h1 + h2).mass  # Invariant mass of particles 1 and 2
+```
+
+### 9. Cache Performance (`09_cache_performance.py`)
+Demonstrates how to:
+- Analyze cache hit ratio
+- Measure performance improvements due to caching
+
+```python
+# Measure cache hit ratio
+cache_hit_ratio = vec.cache_hit_ratio
+print(f"Cache hit ratio: {cache_hit_ratio:.2f}")
 ```
 
 #### Dependencies
@@ -157,6 +165,7 @@ python 02_decay_reconstruction.py
 python 03_advanced_selections.py
 python 04_boost_frame.py
 python 08_lhcb_data.py
+python 09_cache_performance.py
 ```
 
 ## Expected Output

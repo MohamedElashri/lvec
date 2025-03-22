@@ -5,6 +5,7 @@ This module provides an optimized caching system that:
 1. Tracks dependencies between properties to enable fine-grained cache invalidation
 2. Caches intermediate calculations for reuse across multiple properties
 3. Uses a dependency graph for efficient lazy evaluation
+4. Provides instrumentation to track cache hit ratios and performance metrics
 """
 
 class PropertyCache:
@@ -20,6 +21,8 @@ class PropertyCache:
         _dependents: Dictionary mapping components to the properties that depend on them
         _comp_version: Dictionary tracking the version of each component
         _value_version: Dictionary tracking the version of each cached value
+        _hits: Dictionary tracking number of cache hits per property
+        _misses: Dictionary tracking number of cache misses per property
     """
     
     def __init__(self):
@@ -38,6 +41,11 @@ class PropertyCache:
         
         # Version counters for each cached value
         self._value_version = {}
+        
+        # Instrumentation counters for performance analysis
+        self._hits = {}
+        self._misses = {}
+        self._enabled = True
 
     def register_dependency(self, prop, dependencies):
         """
@@ -54,6 +62,12 @@ class PropertyCache:
             if dep not in self._dependents:
                 self._dependents[dep] = set()
             self._dependents[dep].add(prop)
+        
+        # Initialize instrumentation counters for this property
+        if prop not in self._hits:
+            self._hits[prop] = 0
+        if prop not in self._misses:
+            self._misses[prop] = 0
     
     def touch_component(self, component):
         """
@@ -111,6 +125,10 @@ class PropertyCache:
         
         # Recompute if needed
         if needs_recompute:
+            # Record cache miss for instrumentation
+            if self._enabled and key in self._misses:
+                self._misses[key] += 1
+                
             self._values[key] = compute_func()
             # Update the value's version to the latest component version
             max_version = 0
@@ -119,6 +137,10 @@ class PropertyCache:
                     if dep in self._comp_version:
                         max_version = max(max_version, self._comp_version[dep])
             self._value_version[key] = max_version
+        else:
+            # Record cache hit for instrumentation
+            if self._enabled and key in self._hits:
+                self._hits[key] += 1
         
         return self._values[key]
     
@@ -133,10 +155,24 @@ class PropertyCache:
         Returns:
             The intermediate result
         """
+        # Initialize instrumentation counters for intermediate results too
+        if self._enabled and key not in self._hits:
+            self._hits[key] = 0
+            self._misses[key] = 0
+            
+        # Check if the intermediate result is already cached
+        is_cached = key in self._values
+        
         # Intermediate results are handled similarly to properties but aren't 
         # part of the dependency graph
-        if key not in self._values:
+        if not is_cached:
+            if self._enabled:
+                self._misses[key] += 1
             self._values[key] = compute_func()
+        else:
+            if self._enabled:
+                self._hits[key] += 1
+                
         return self._values[key]
     
     def clear_cache(self):
@@ -171,3 +207,78 @@ class PropertyCache:
             if comp in self._dependents:
                 affected.update(self._dependents[comp])
         return affected
+    
+    # ----- Instrumentation methods -----
+    
+    def enable_instrumentation(self, enabled=True):
+        """
+        Enable or disable cache hit/miss tracking.
+        
+        Args:
+            enabled: Boolean flag to enable or disable instrumentation
+        """
+        self._enabled = enabled
+    
+    def reset_counters(self):
+        """Reset all hit and miss counters to zero."""
+        for key in self._hits:
+            self._hits[key] = 0
+        for key in self._misses:
+            self._misses[key] = 0
+    
+    def get_hit_ratio(self, key=None):
+        """
+        Get the hit ratio for a specific property or overall.
+        
+        Args:
+            key: Property name to get hit ratio for, or None for overall ratio
+            
+        Returns:
+            float: Hit ratio as a value between 0.0 and 1.0, or None if no accesses
+        """
+        if key is not None:
+            # Return hit ratio for a specific property
+            if key in self._hits:
+                hits = self._hits[key]
+                total = hits + self._misses.get(key, 0)
+                return hits / total if total > 0 else None
+            return None
+        else:
+            # Return overall hit ratio across all properties
+            total_hits = sum(self._hits.values())
+            total_misses = sum(self._misses.values())
+            total = total_hits + total_misses
+            return total_hits / total if total > 0 else None
+    
+    def get_stats(self):
+        """
+        Get comprehensive statistics about the cache performance.
+        
+        Returns:
+            dict: Dictionary containing hit/miss statistics for all properties
+        """
+        stats = {
+            "overall": {
+                "hits": sum(self._hits.values()),
+                "misses": sum(self._misses.values()),
+                "total": sum(self._hits.values()) + sum(self._misses.values()),
+                "hit_ratio": self.get_hit_ratio()
+            },
+            "properties": {}
+        }
+        
+        # Add stats for each property
+        for key in set(self._hits.keys()) | set(self._misses.keys()):
+            hits = self._hits.get(key, 0)
+            misses = self._misses.get(key, 0)
+            total = hits + misses
+            hit_ratio = hits / total if total > 0 else None
+            
+            stats["properties"][key] = {
+                "hits": hits,
+                "misses": misses,
+                "total": total,
+                "hit_ratio": hit_ratio
+            }
+            
+        return stats

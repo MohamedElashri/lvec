@@ -70,6 +70,21 @@ class Vec2D:
         """
         return self._cache.get_intermediate(key, func)
     
+    # Cache instrumentation properties
+    @property
+    def cache_stats(self):
+        """Get comprehensive statistics about the cache performance."""
+        return self._cache.get_stats()
+    
+    @property
+    def cache_hit_ratio(self):
+        """Get the overall cache hit ratio as a float between 0 and 1."""
+        return self._cache.get_hit_ratio()
+    
+    def reset_cache_stats(self):
+        """Reset all cache hit and miss counters to zero."""
+        self._cache.reset_counters()
+        
     @property
     def x(self): return self._x
     
@@ -205,6 +220,21 @@ class Vec3D:
             The intermediate result
         """
         return self._cache.get_intermediate(key, func)
+    
+    # Cache instrumentation properties
+    @property
+    def cache_stats(self):
+        """Get comprehensive statistics about the cache performance."""
+        return self._cache.get_stats()
+    
+    @property
+    def cache_hit_ratio(self):
+        """Get the overall cache hit ratio as a float between 0 and 1."""
+        return self._cache.get_hit_ratio()
+    
+    def reset_cache_stats(self):
+        """Reset all cache hit and miss counters to zero."""
+        self._cache.reset_counters()
     
     @property
     def x(self): return self._x
