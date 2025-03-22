@@ -125,7 +125,7 @@ def plot_results(sizes, lvec_data, vector_data):
     ax1.grid(True, which='minor', linestyle=':', alpha=0.4)
     ax2.grid(True, which='minor', linestyle=':', alpha=0.4)
     
-    plt.savefig('benchmark_results.pdf', dpi=300, bbox_inches='tight')
+    plt.savefig('benchmarks/plots/benchmark_results.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == '__main__':

@@ -153,7 +153,7 @@ def benchmark_cached_initialization():
     plt.title('Repeated Initialization Performance (Caching Effects)', fontsize=14)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend(fontsize=12)
-    plt.savefig('cached_initialization_benchmark.pdf', dpi=300, bbox_inches='tight')
+    plt.savefig('benchmarks/plots/cached_initialization_benchmark.pdf', dpi=300, bbox_inches='tight')
     plt.close()
     
     return lvec_times, vector_times
@@ -214,7 +214,7 @@ def plot_results(sizes, lvec_data, vector_data, title="LVec vs vector Initializa
     ax2.grid(True, which='minor', linestyle=':', alpha=0.4)
     ax3.grid(True, which='minor', linestyle=':', alpha=0.4)
     
-    plt.savefig('initialization_benchmark_results.pdf', dpi=300, bbox_inches='tight')
+    plt.savefig('benchmarks/plots/initialization_benchmark_results.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == '__main__':

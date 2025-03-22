@@ -136,7 +136,7 @@ def plot_all_operations(sizes, all_results, operations):
         fig.delaxes(fig.add_subplot(gs[row, col]))
     
     plt.suptitle('Performance Comparison of Operations', fontsize=14, y=1.02)
-    plt.savefig('benchmark_all_operations.pdf', dpi=300, bbox_inches='tight')
+    plt.savefig('benchmarks/plots/benchmark_all_operations.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == '__main__':
@@ -167,4 +167,4 @@ if __name__ == '__main__':
     
     # Plot all operations in one figure
     plot_all_operations(sizes, all_results, operations)
-    print("\nPlot saved as benchmark_all_operations.pdf")
+    print("\nPlot saved as benchmarks/plots/benchmark_all_operations.pdf")
