@@ -51,5 +51,7 @@ packages = ["lvec"]
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.10.1",
     "pytest>=8.3.5",
+    "vector>=1.6.1",
 ]

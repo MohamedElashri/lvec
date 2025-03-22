@@ -130,7 +130,7 @@ def plot_results(sizes, lvec_data, vector_data):
 
 if __name__ == '__main__':
     # Test with different array sizes
-    sizes = [10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+    sizes = [10, 100, 1000, 10000, 100000, 1000000]
     lvec_times, lvec_errors, vector_times, vector_errors, lvec_memory, vector_memory = benchmark_lvec_vs_vector(sizes)
     plot_results(sizes, (lvec_times, lvec_errors, lvec_memory), 
                 (vector_times, vector_errors, vector_memory))
