@@ -459,7 +459,7 @@ def boostz(self, bz):
 ## Conversion Methods
 
 ```python
-def to_numpy(self):
+def to_np(self):
     """
     Convert to NumPy arrays.
 
@@ -470,7 +470,7 @@ def to_numpy(self):
         {'px': array, 'py': array, 'pz': array, 'E': array}
     """
 
-def to_awkward(self):
+def to_ak(self):
     """
     Convert to Awkward arrays.
 
@@ -745,4 +745,3 @@ with uproot.recreate("output.root") as f:
    mask = (vectors.pt > 20) & (np.abs(vectors.eta) < 2.5)
    selected = vectors[mask]
    ```
-

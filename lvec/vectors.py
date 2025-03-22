@@ -33,7 +33,7 @@ class Vec2D:
     def touch(self):
         """Invalidate cache by incrementing version."""
         self._version += 1
-        self.clear_cache()
+        self.clear_cache()  # Directly clear the cache after incrementing version to ensure complete invalidation
             
     def _get_cached(self, key, func):
         """Get cached value or compute and cache it."""
@@ -83,6 +83,19 @@ class Vec2D:
     def dot(self, other):
         """Compute dot product with another vector."""
         return self.x * other.x + self.y * other.y
+        
+    def rotate(self, angle):
+        """
+        Rotate the 2D vector by the specified angle.
+        
+        Args:
+            angle: Rotation angle in radians
+            
+        Returns:
+            Vec2D: New rotated 2D vector
+        """
+        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
+        return Vec2D(c*self.x - s*self.y, s*self.x + c*self.y)
 
 class Vec3D:
     """3D Vector class supporting both NumPy and Awkward array backends.
@@ -113,7 +126,7 @@ class Vec3D:
     def touch(self):
         """Invalidate cache by incrementing version."""
         self._version += 1
-        self.clear_cache()
+        self.clear_cache()  # Directly clear the cache after incrementing version to ensure complete invalidation
             
     def _get_cached(self, key, func):
         """Get cached value or compute and cache it."""
@@ -184,3 +197,47 @@ class Vec3D:
         return Vec3D(self.y * other.z - self.z * other.y,
                     self.z * other.x - self.x * other.z,
                     self.x * other.y - self.y * other.x)
+                    
+    def rotx(self, angle):
+        """Rotate around x-axis."""
+        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
+        return Vec3D(self.x,
+                   c*self.y - s*self.z,
+                   s*self.y + c*self.z)
+    
+    def roty(self, angle):
+        """Rotate around y-axis."""
+        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
+        return Vec3D(c*self.x + s*self.z,
+                   self.y,
+                   -s*self.x + c*self.z)
+    
+    def rotz(self, angle):
+        """Rotate around z-axis."""
+        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
+        return Vec3D(c*self.x - s*self.y,
+                   s*self.x + c*self.y,
+                   self.z)
+    
+    def rotate(self, angle, axis='z'):
+        """
+        Rotate around a specified axis.
+        
+        Args:
+            angle: Rotation angle in radians
+            axis: Axis to rotate around ('x', 'y', or 'z')
+        
+        Returns:
+            Vec3D: New rotated 3D vector
+            
+        Raises:
+            ValueError: If an invalid axis is specified
+        """
+        if axis.lower() == 'x':
+            return self.rotx(angle)
+        elif axis.lower() == 'y':
+            return self.roty(angle)
+        elif axis.lower() == 'z':
+            return self.rotz(angle)
+        else:
+            raise ValueError(f"Invalid rotation axis: {axis}. Must be 'x', 'y', or 'z'")

@@ -48,9 +48,9 @@ class LVec:
                 raise InputError("E", self._E, "Energy must be non-negative")
         else:
             if self._lib == 'np' and (self._E < 0).any():
-                raise InputError("E", "array", "All energy values must be non-negative")
+                raise InputError("E", "array", "energy values must be non-negative")
             elif self._lib == 'ak' and ak.any(self._E < 0):
-                raise InputError("E", "array", "All energy values must be non-negative")
+                raise InputError("E", "array", "energy values must be non-negative")
                 
         self._cache = {}
         self._version = 0
@@ -86,7 +86,7 @@ class LVec:
     def touch(self):
         """Invalidate cache by incrementing version."""
         self._version += 1
-        self.clear_cache()  # Just call it, don't add parentheses
+        self.clear_cache()  # Directly clear the cache after incrementing version to ensure complete invalidation
             
     def _get_cached(self, key, func):
         """Get cached value or compute and cache it."""
@@ -231,6 +231,29 @@ class LVec:
                    s*self.px + c*self.py,
                    self.pz,
                    self.E)
+    
+    def rotate(self, angle, axis='z'):
+        """
+        Rotate around a specified axis.
+        
+        Args:
+            angle: Rotation angle in radians
+            axis: Axis to rotate around ('x', 'y', or 'z')
+        
+        Returns:
+            LVec: New rotated Lorentz vector
+            
+        Raises:
+            ValueError: If an invalid axis is specified
+        """
+        if axis.lower() == 'x':
+            return self.rotx(angle)
+        elif axis.lower() == 'y':
+            return self.roty(angle)
+        elif axis.lower() == 'z':
+            return self.rotz(angle)
+        else:
+            raise ValueError(f"Invalid rotation axis: {axis}. Must be 'x', 'y', or 'z'")
     
     def to_np(self):
         """Convert to NumPy arrays."""
