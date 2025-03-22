@@ -244,10 +244,10 @@ class LVec:
     def to_ak(self):
         """Convert to Awkward arrays."""
         return {
-            'px': to_ak(np.atleast_1d(self.px)),
-            'py': to_ak(np.atleast_1d(self.py)),
-            'pz': to_ak(np.atleast_1d(self.pz)),
-            'E': to_ak(np.atleast_1d(self.E))
+            'px': to_ak(self.px),
+            'py': to_ak(self.py),
+            'pz': to_ak(self.pz),
+            'E': to_ak(self.E)
         }
         
     def to_p4(self):
