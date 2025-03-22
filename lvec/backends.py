@@ -36,64 +36,118 @@ def to_np(x):
     return np.asarray(x)
 
 def backend_sqrt(x, lib):
-    """Compute square root using appropriate backend."""
+    """
+    Compute square root using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
+        return np.sqrt(x)
+    if lib == 'ak' and HAS_AWKWARD:
+        # Use NumPy's sqrt directly - it works on Awkward arrays
         return np.sqrt(x)
     return np.sqrt(x)
 
 
 def backend_where(condition, x, y, lib):
-    """Compute where using appropriate backend."""
-    if lib == 'ak':
+    """
+    Compute where using appropriate backend.
+    
+    For Awkward arrays, uses ak.where which is specifically designed for
+    Awkward arrays.
+    """
+    if lib == 'ak' and HAS_AWKWARD:
+        import awkward as ak
         return ak.where(condition, x, y)
     else:
         return np.where(condition, x, y)
         
 def backend_sin(x, lib):
-    """Compute sine using appropriate backend."""
+    """
+    Compute sine using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.sin(x)
     return np.sin(x)
 
 def backend_cos(x, lib):
-    """Compute cosine using appropriate backend."""
+    """
+    Compute cosine using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.cos(x)
     return np.cos(x) 
 
 
 def backend_sinh(x, lib):
-    """Compute hyperbolic sine using appropriate backend."""
+    """
+    Compute hyperbolic sine using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.sinh(x)
     return np.sinh(x)
 
 def backend_cosh(x, lib):
-    """Compute hyperbolic cosine using appropriate backend."""
+    """
+    Compute hyperbolic cosine using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.cosh(x)
     return np.cosh(x)
     
 def backend_atan2(y, x, lib):
-    """Compute arctangent2 using appropriate backend."""
+    """
+    Compute arctangent2 using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)) and isinstance(y, (float, int)):
         return np.arctan2(y, x)
     return np.arctan2(y, x)
 
 def backend_log(x, lib):
-    """Compute natural logarithm using appropriate backend."""
+    """
+    Compute natural logarithm using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.log(x)
     return np.log(x)
 
 def backend_exp(x, lib):
-    """Compute exponential using appropriate backend."""
+    """
+    Compute exponential using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.exp(x)
     return np.exp(x)
 
 def backend_tan(x, lib):
-    """Compute tangent using appropriate backend."""
+    """
+    Compute tangent using appropriate backend.
+    
+    For Awkward arrays, applies NumPy functions that work properly with
+    Awkward arrays without converting to/from NumPy.
+    """
     if isinstance(x, (float, int)):
         return np.tan(x)
     return np.tan(x)
