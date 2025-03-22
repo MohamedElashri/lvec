@@ -191,7 +191,7 @@ class LVec:
             bp = bx*self.px + by*self.py + bz*self.pz
         
             # Modify the condition to work with arrays
-            gamma2 = np.where(b2 > 0, (gamma - 1.0) / b2, 0.0)
+            gamma2 = backend_where(b2 > 0, (gamma - 1.0) / b2, 0.0, self._lib)
         
             px = self.px + gamma2*bp*bx + gamma*bx*self.E
             py = self.py + gamma2*bp*by + gamma*by*self.E
