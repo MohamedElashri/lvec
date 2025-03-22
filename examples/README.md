@@ -101,7 +101,15 @@ vec3d = Vector3D(x, y, z)
 rotated = vec3d.rotate(theta, axis)
 ```
 
-### 7. LHCb Analysis (`lhcb_data.py`)
+### 7. Jagged Arrays (`07_jagged_arrays.py`)
+Shows how to:
+- Work with jagged arrays
+- Handle variable-length datasets
+- Perform operations on jagged arrays
+
+
+
+### 8. LHCb Analysis (`08_lhcb_data.py`)
 Demonstrates how to:
 - Work with real LHCb open data (B→hhh decay)
 - Calculate two-body invariant masses
@@ -148,7 +156,7 @@ python 01_basic_reading.py
 python 02_decay_reconstruction.py
 python 03_advanced_selections.py
 python 04_boost_frame.py
-python lhcb_data.py
+python 08_lhcb_data.py
 ```
 
 ## Expected Output
