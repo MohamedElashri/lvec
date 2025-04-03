@@ -8,7 +8,7 @@
 6. [Backend System](#backend-system)
 7. [Advanced Usage](#advanced-usage)
 8. [Performance Considerations](#performance-considerations)
-
+9. [Reference Frames](#reference-frames)
 
 ## Overview
 
@@ -745,3 +745,66 @@ with uproot.recreate("output.root") as f:
    mask = (vectors.pt > 20) & (np.abs(vectors.eta) < 2.5)
    selected = vectors[mask]
    ```
+
+## Reference Frames
+
+The `Frame` class provides a powerful abstraction for handling reference frame transformations in relativistic calculations.
+
+```python
+from lvec import Frame, LVec
+
+# Create a stationary lab frame
+lab_frame = Frame.rest(name="lab")
+
+# Create a frame moving with velocity β=(0.5, 0, 0) relative to lab frame
+moving_frame = Frame(bx=0.5, by=0.0, bz=0.0, name="moving")
+
+# Create a center-of-mass frame from a collection of particles
+particles = [
+    LVec(px=1.0, py=0.0, pz=2.0, E=5.0),
+    LVec(px=-0.5, py=0.0, pz=-1.0, E=3.0)
+]
+cm_frame = Frame.center_of_mass(particles, name="cm")
+
+# Access frame properties
+print(f"Frame velocity: β=({cm_frame.beta_x}, {cm_frame.beta_y}, {cm_frame.beta_z})")
+print(f"Gamma factor: γ={cm_frame.gamma}")
+```
+
+### Frame Transformations
+
+LVec provides two methods for transforming vectors between reference frames:
+
+1. **to_frame**: Transform directly to a specific frame
+   ```python
+   # Transform a vector to the center-of-mass frame
+   p_cm = p_lab.to_frame(cm_frame)
+   ```
+
+2. **transform_frame**: Transform from one specific frame to another
+   ```python
+   # Transform a vector from lab frame to moving frame
+   p_moving = p_lab.transform_frame(lab_frame, moving_frame)
+   ```
+
+The key difference is that `to_frame` assumes the vector is in some unspecified frame and applies a direct boost using the negative of the target frame's velocity, while `transform_frame` explicitly specifies both the source and target frames.
+
+### Physics Validation
+
+A key property of reference frame transformations is that they preserve invariant quantities like mass:
+
+```python
+# Verify mass invariance
+print(f"Mass in lab frame: {particle.mass}")
+print(f"Mass in CM frame: {particle.to_frame(cm_frame).mass}")
+# These should be identical
+```
+
+In the center-of-mass frame, the total momentum should be zero:
+
+```python
+# Get total momentum in CM frame
+total_p_cm = sum(p.to_frame(cm_frame) for p in particles)
+print(f"Total momentum in CM: ({total_p_cm.px}, {total_p_cm.py}, {total_p_cm.pz})")
+# Should be very close to (0, 0, 0)
+```
