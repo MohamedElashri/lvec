@@ -7,6 +7,7 @@ from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
                    compute_pt, compute_p, compute_mass, compute_eta, compute_phi)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
+from .frame import Frame
 import numpy as np
 
 
@@ -341,8 +342,26 @@ class LVec:
             gamma = 1.0 / backend_sqrt(1.0 - b2, self._lib)
             bp = bx*self.px + by*self.py + bz*self.pz
         
-            # Modify the condition to work with arrays
-            gamma2 = backend_where(b2 > 0, (gamma - 1.0) / b2, 0.0, self._lib)
+            # Calculate gamma2 without division by zero
+            # When b2 is very small, use the Taylor expansion approximation: (gamma-1)/b2 ≈ 0.5
+            epsilon = 1e-10
+            
+            if isinstance(b2, (float, int)):
+                # Handle scalar case
+                gamma2 = 0.0 if b2 <= epsilon else (gamma - 1.0) / b2
+            elif self._lib == 'np':
+                # Handle NumPy array case
+                gamma2 = np.zeros_like(b2)
+                mask = (b2 > epsilon)
+                if mask.any():
+                    gamma2[mask] = (gamma[mask] - 1.0) / b2[mask]
+            else:
+                # Handle Awkward array case
+                import awkward as ak
+                gamma2 = ak.zeros_like(b2)
+                mask = (b2 > epsilon)
+                if ak.any(mask):
+                    gamma2 = ak.where(mask, (gamma - 1.0) / b2, gamma2)
         
             px = self.px + gamma2*bp*bx + gamma*bx*self.E
             py = self.py + gamma2*bp*by + gamma*by*self.E
@@ -405,6 +424,59 @@ class LVec:
             return self.rotz(angle)
         else:
             raise ValueError(f"Invalid rotation axis: {axis}. Must be 'x', 'y', or 'z'")
+    
+    def to_frame(self, frame):
+        """
+        Transform this 4-vector to the specified reference frame.
+
+        This is equivalent to performing a boost by the negative
+        of the frame's velocity.
+
+        Parameters
+        ----------
+        frame : Frame
+            The target frame to transform into.
+
+        Returns
+        -------
+        LVec
+            The LVec transformed to the target frame.
+        """
+        return self.boost(-frame.beta_x, -frame.beta_y, -frame.beta_z)
+
+    def transform_frame(self, current_frame, target_frame):
+        """
+        Transform this vector from current_frame to target_frame.
+
+        This performs a two-step transformation:
+        1. Transform from current_frame back to the "universal rest frame"
+        2. Transform from the "universal rest frame" to the target_frame
+
+        Parameters
+        ----------
+        current_frame : Frame
+            The frame in which this LVec is currently expressed.
+        target_frame : Frame
+            The frame to which to transform.
+
+        Returns
+        -------
+        LVec
+            The new LVec in the target frame.
+        """
+        # Step 1: First boost from current_frame back to the universal rest frame
+        # We apply the opposite boost of the current_frame's velocity
+        unboosted = self.boost(-current_frame.beta_x, 
+                              -current_frame.beta_y, 
+                              -current_frame.beta_z)
+        
+        # Step 2: Now boost into the target_frame
+        # We apply the velocity of the target_frame
+        final = unboosted.boost(target_frame.beta_x,
+                              target_frame.beta_y,
+                              target_frame.beta_z)
+        
+        return final
     
     def to_np(self):
         """Convert to NumPy arrays."""
