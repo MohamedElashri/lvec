@@ -48,6 +48,32 @@ v3 = v1 + v2
 v4 = v1 * 2.0
 ```
 
+### Reference Frames
+```python
+from lvec import LVec, Frame
+
+# Create particles in the lab frame
+p1_lab = LVec(px=0.0, py=0.0, pz=20.0, E=25.0)
+p2_lab = LVec(px=0.0, py=0.0, pz=-15.0, E=20.0)
+total_lab = p1_lab + p2_lab
+
+# Create reference frames
+lab_frame = Frame.rest(name="lab")  # Stationary frame
+cm_frame = Frame.from_lvec(total_lab, name="cm")  # Center-of-mass frame
+
+# Transform particles to center-of-mass frame
+p1_cm = p1_lab.transform_frame(lab_frame, cm_frame)
+p2_cm = p2_lab.transform_frame(lab_frame, cm_frame)
+
+# Verify momentum conservation in CM frame
+total_cm = p1_cm + p2_cm
+print(f"Total momentum in CM: ({total_cm.px:.3f}, {total_cm.py:.3f}, {total_cm.pz:.3f})")
+# Should output values close to (0, 0, 0)
+
+# Alternative: directly transform to a frame
+p1_cm_alt = p1_lab.to_frame(cm_frame)
+```
+
 ### 2D Vectors
 ```python
 from lvec import Vector2D
@@ -105,12 +131,23 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 | `from_ary` | Create from dictionary | `ary_dict` with px, py, pz, E keys | `LVec` |
 | `from_vec` | Create from vector-like object | `vobj` with px, py, pz, E attributes | `LVec` |
 | `boost` | Boost vector to new frame | `bx, by, bz` | `LVec` |
+| `to_frame` | Transform to specified frame | `frame` | `LVec` |
+| `transform_frame` | Transform between frames | `current_frame, target_frame` | `LVec` |
 | `mass` | Get invariant mass | - | `float` |
 | `pt` | Get transverse momentum | - | `float` |
 | `eta` | Get pseudorapidity | - | `float` |
 | `phi` | Get azimuthal angle | - | `float` |
 | `E` | Get energy | - | `float` |
 | `p` | Get total momentum | - | `float` |
+
+### Frame Methods
+
+| Method | Description | Parameters | Returns |
+|--------|-------------|------------|----------|
+| `__init__` | Create a reference frame | `bx, by, bz, name` | `Frame` |
+| `rest` | Create a stationary frame | `name` | `Frame` |
+| `from_lvec` | Create frame in which a vector is at rest | `total_lvec, name` | `Frame` |
+| `center_of_mass` | Create center-of-mass frame from vectors | `lvec_list, name` | `Frame` |
 
 ### 2D Vector (Vector2D) Methods
 
@@ -170,8 +207,9 @@ For detailed documentation and examples, visit our [documentation page](https://
 
 Check out our [examples directory](https://github.com/MohamedElashri/lvec/tree/main/examples) for comprehensive examples including:
 - Basic vector operations
+- Reference frame transformations
 - Decay reconstructions
-- Frame transformations
+- Center-of-mass calculations
 - 2D vector manipulations
 - 3D spatial analysis
 - Advanced selections
