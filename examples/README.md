@@ -60,7 +60,7 @@ mask = (muon1.pt > 20) & (muon2.pt > 20) & \
 muon1_selected = muon1[mask]
 ```
 
-### 4. Reference Frames (`04_boost_frame.py`)
+### 4. Boost Frame (`04_boost_frame.py`)
 Shows advanced operations:
 - Calculating boost vectors
 - Performing Lorentz boosts
@@ -121,18 +121,6 @@ h2 = LVec(h2_px, h2_py, h2_pz, calculate_energy(h2_px, h2_py, h2_pz))
 # Calculate two-body invariant masses
 m12 = (h1 + h2).mass  # Invariant mass of particles 1 and 2
 ```
-
-### 9. Cache Performance (`09_cache_performance.py`)
-Demonstrates how to:
-- Analyze cache hit ratio
-- Measure performance improvements due to caching
-
-```python
-# Measure cache hit ratio
-cache_hit_ratio = vec.cache_hit_ratio
-print(f"Cache hit ratio: {cache_hit_ratio:.2f}")
-```
-
 #### Dependencies
 Additional dependencies required for this example:
 ```bash
@@ -154,7 +142,52 @@ This will:
 1. Download the LHCb data file
 2. Calculate two-body invariant masses
 3. Create publication-style mass distribution plots
-4. Save plots as 'mass_distributions.pdf'
+
+
+
+### 9. Cache Performance (`09_cache_performance.py`)
+Demonstrates how to:
+- Analyze cache hit ratio
+- Measure performance improvements due to caching
+
+```python
+# Measure cache hit ratio
+cache_hit_ratio = vec.cache_hit_ratio
+print(f"Cache hit ratio: {cache_hit_ratio:.2f}")
+```
+
+### 10. Reference Frames (`10_reference_frames.py`)
+Demonstrates how to:
+- Create and work with reference frames
+- Transform particles between frames
+- Verify momentum conservation in the center-of-mass frame
+- Check if invariant quantities are preserved across transformations
+
+```python
+# Create a center-of-mass frame
+cm_frame = Frame.from_lvec(total, name="center-of-mass")
+
+# Transform particles to center-of-mass frame
+p1_cm = p1.transform_frame(lab_frame, cm_frame)
+p2_cm = p2.transform_frame(lab_frame, cm_frame)
+
+# Verify total momentum is zero in CM frame
+total_cm = p1_cm + p2_cm
+print(f"Total momentum in CM: px={total_cm.px:.6f}, py={total_cm.py:.6f}, pz={total_cm.pz:.6f}")
+```
+
+Sample output:
+```
+=== Particles in center-of-mass frame ===
+Particle 1: px=0.000000, py=0.000000, pz=17.329527, E=22.919697, mass=15.000000
+Particle 2: px=0.000000, py=0.000000, pz=-17.329527, E=21.801663, mass=13.228757
+
+Total momentum in CM: px=0.000000, py=0.000000, pz=0.000000
+Total energy in CM: E=44.721360
+Invariant mass in CM: √s=44.721360
+```
+
+
 
 ## Running the Examples
 
@@ -166,6 +199,7 @@ python 03_advanced_selections.py
 python 04_boost_frame.py
 python 08_lhcb_data.py
 python 09_cache_performance.py
+python 10_reference_frames.py
 ```
 
 ## Expected Output
