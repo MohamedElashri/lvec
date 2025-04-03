@@ -168,8 +168,7 @@ def test_lvec_transform_frame():
     
     assert abs(total_cm.px) < 1e-10
     assert abs(total_cm.py) < 1e-10
-    # Temporarily comment out failing assertion for debugging
-    # assert abs(total_cm.pz) < 1e-10  
+    assert abs(total_cm.pz) < 1e-10
     print(f"Total pz in CM frame: {total_cm.pz}")
     
     # Test invariant mass
