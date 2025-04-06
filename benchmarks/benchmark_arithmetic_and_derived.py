@@ -1,21 +1,14 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""
-Benchmark for arithmetic operations and derived properties in LVec.
-This benchmark focuses on the computational speed of vector algebra and 
-the effectiveness of caching in LVec compared to other vector libraries.
-"""
-
 import numpy as np
 import timeit
 import matplotlib.pyplot as plt
 import tracemalloc
 import gc
 import time
+import os
 from functools import partial
 from lvec import LVec, Vector2D, Vector3D
 import vector  # Comparison library
+from plotting_utils import plot_vector_types_comparison, set_publication_style
 
 def measure_memory_usage(operation, n_repeats=5):
     """Measure memory usage for an operation."""
@@ -139,7 +132,7 @@ def benchmark_arithmetic(size, vector_type, n_repeats=10):
         cross_time, cross_std = measure_single_timing(cross_op, n_repeats)
         results["cross_product"] = {"time": cross_time, "std": cross_std}
         
-    elif vector_type == "Vector":  # vector package for comparison
+    elif vector_type == "Scikit Vector":  # Changed from "Vector" to "Scikit Vector"
         px, py, pz, E = generate_test_data(size)
         v1 = vector.arr({"px": px, "py": py, "pz": pz, "E": E})
         v2 = vector.arr({"px": px, "py": py, "pz": pz, "E": E})
@@ -227,7 +220,7 @@ def benchmark_derived_properties(size, vector_type, n_repeats=10):
         rho_time, rho_std = measure_single_timing(rho_op, n_repeats)
         results["rho"] = {"time": rho_time, "std": rho_std}
         
-    elif vector_type == "Vector":  # vector package for comparison
+    elif vector_type == "Scikit Vector":  # Changed from "Vector" to "Scikit Vector"
         px, py, pz, E = generate_test_data(size)
         vec = vector.arr({"px": px, "py": py, "pz": pz, "E": E})
         
@@ -288,132 +281,56 @@ def benchmark_caching_effectiveness(size, n_repeats=10):
 
 def plot_arithmetic_results(sizes, results, vector_types, operations, save_path="benchmark_arithmetic.pdf"):
     """Plot arithmetic operation benchmark results."""
-    plt.style.use('default')
-    n_ops = len(operations)
-    n_cols = 2
-    n_rows = (n_ops + n_cols - 1) // n_cols  # Ceiling division
-    
-    fig = plt.figure(figsize=(12, 4 * n_rows))
-    gs = fig.add_gridspec(n_rows, n_cols, hspace=0.4, wspace=0.3)
-    
-    colors = {'LVec': '#3498db', 'Vector2D': '#2ecc71', 'Vector3D': '#9b59b6', 'Vector': '#e74c3c'}
-    
-    for op_idx, operation in enumerate(operations):
-        row = op_idx // n_cols
-        col = op_idx % n_cols
-        ax = fig.add_subplot(gs[row, col])
-        
-        for vtype in vector_types:
-            # Check if this vector type has this operation
-            if vtype in results and operation in results[vtype][0]:
-                times = [results[vtype][i].get(operation, {}).get("time", np.nan) * 1000 for i in range(len(sizes))]  # ms
-                ax.plot(sizes, times, 'o-', label=vtype, color=colors[vtype], linewidth=2, markersize=6)
-        
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_xlabel('Array Size', fontsize=10)
-        ax.set_ylabel('Time (ms)', fontsize=10)
-        ax.set_title(operation.replace('_', ' ').title(), fontsize=12)
-        ax.grid(True, which='both', linestyle='--', alpha=0.7)
-        ax.grid(True, which='minor', linestyle=':', alpha=0.4)
-        ax.legend(fontsize=10)
-        ax.tick_params(labelsize=8)
-    
-    # Remove any empty subplots
-    for idx in range(len(operations), n_rows * n_cols):
-        row = idx // n_cols
-        col = idx % n_cols
-        if idx < n_rows * n_cols:  # Ensure we're not out of bounds
-            fig.delaxes(fig.add_subplot(gs[row, col]))
-    
-    plt.suptitle('Performance Comparison of Arithmetic Operations', fontsize=14, y=1.02)
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
+    plot_vector_types_comparison(
+        sizes, 
+        results, 
+        vector_types, 
+        operations, 
+        title='Arithmetic Operations Performance', 
+        filename=save_path
+    )
 
 def plot_derived_results(sizes, results, vector_types, properties, save_path="benchmark_derived.pdf"):
     """Plot derived properties benchmark results."""
-    plt.style.use('default')
-    n_props = len(properties)
-    n_cols = 2
-    n_rows = (n_props + n_cols - 1) // n_cols  # Ceiling division
-    
-    fig = plt.figure(figsize=(12, 4 * n_rows))
-    gs = fig.add_gridspec(n_rows, n_cols, hspace=0.4, wspace=0.3)
-    
-    colors = {'LVec': '#3498db', 'Vector2D': '#2ecc71', 'Vector3D': '#9b59b6', 'Vector': '#e74c3c'}
-    
-    for prop_idx, prop in enumerate(properties):
-        row = prop_idx // n_cols
-        col = prop_idx % n_cols
-        ax = fig.add_subplot(gs[row, col])
-        
-        for vtype in vector_types:
-            # Check if this vector type has this property
-            if vtype in results and prop in results[vtype][0]:
-                times = [results[vtype][i].get(prop, {}).get("time", np.nan) * 1000 for i in range(len(sizes))]  # ms
-                ax.plot(sizes, times, 'o-', label=vtype, color=colors[vtype], linewidth=2, markersize=6)
-        
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_xlabel('Array Size', fontsize=10)
-        ax.set_ylabel('Time (ms)', fontsize=10)
-        ax.set_title(prop.replace('_', ' ').title(), fontsize=12)
-        ax.grid(True, which='both', linestyle='--', alpha=0.7)
-        ax.grid(True, which='minor', linestyle=':', alpha=0.4)
-        ax.legend(fontsize=10)
-        ax.tick_params(labelsize=8)
-    
-    # Remove any empty subplots
-    for idx in range(len(properties), n_rows * n_cols):
-        row = idx // n_cols
-        col = idx % n_cols
-        if idx < n_rows * n_cols:  # Ensure we're not out of bounds
-            fig.delaxes(fig.add_subplot(gs[row, col]))
-    
-    plt.suptitle('Performance Comparison of Derived Properties', fontsize=14, y=1.02)
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
+    plot_vector_types_comparison(
+        sizes, 
+        results, 
+        vector_types, 
+        properties, 
+        title='Derived Properties Performance', 
+        filename=save_path
+    )
 
 def plot_caching_results(sizes, cache_results, save_path="benchmark_caching.pdf"):
     """Plot caching effectiveness benchmark results."""
-    plt.style.use('default')
+    set_publication_style()
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Extract times in milliseconds
-    cached_times = [res["cached"]["time"] * 1000 for res in cache_results]
-    uncached_times = [res["uncached"]["time"] * 1000 for res in cache_results]
+    # Convert to milliseconds
+    cached_times = np.array([res["cached"] for res in cache_results]) * 1000
+    uncached_times = np.array([res["uncached"] for res in cache_results]) * 1000
     
-    # Calculate speedup
-    speedup = [uncached / cached for uncached, cached in zip(uncached_times, cached_times)]
+    ax.plot(sizes, cached_times, 'o-', label='With Caching', color='#109618', linewidth=2, markersize=6)
+    ax.plot(sizes, uncached_times, 'o-', label='Without Caching', color='#FF9900', linewidth=2, markersize=6)
     
-    # Create primary plot for times
-    ax.plot(sizes, cached_times, 'o-', label='With Caching', color='#2ecc71', linewidth=2, markersize=6)
-    ax.plot(sizes, uncached_times, 'o-', label='Without Caching', color='#e74c3c', linewidth=2, markersize=6)
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_xlabel('Array Size', fontsize=12)
     ax.set_ylabel('Time (ms)', fontsize=12)
+    ax.set_title('Caching Effectiveness in lvec', fontsize=14)
     ax.grid(True, which='both', linestyle='--', alpha=0.7)
     ax.grid(True, which='minor', linestyle=':', alpha=0.4)
-    ax.tick_params(labelsize=10)
-    ax.legend(fontsize=10, loc='upper left')
+    ax.legend(fontsize=12)
     
-    # Create secondary y-axis for speedup
-    ax2 = ax.twinx()
-    ax2.plot(sizes, speedup, 'o--', label='Speedup Factor', color='#3498db', linewidth=1.5, markersize=5)
-    ax2.set_ylabel('Speedup Factor (Uncached/Cached)', fontsize=12, color='#3498db')
-    ax2.tick_params(axis='y', labelcolor='#3498db')
-    ax2.legend(fontsize=10, loc='upper right')
-    
-    plt.title('Caching Effectiveness in LVec', fontsize=14)
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.tight_layout()
+    plt.savefig(os.path.join('benchmarks/plots', save_path), bbox_inches='tight')
     plt.close()
 
 def run_benchmarks():
     """Run all benchmarks and plot results."""
     sizes = [10, 100, 1000, 10000, 100000, 1000000]
-    vector_types = ["LVec", "Vector2D", "Vector3D", "Vector"]
+    vector_types = ["LVec", "Vector2D", "Vector3D", "Scikit Vector"]
     
     # Arithmetic operations
     arith_results = {vtype: [] for vtype in vector_types}
@@ -447,8 +364,9 @@ def run_benchmarks():
         print(f"  Speedup:         {res['uncached']['time']/res['cached']['time']:.2f}x")
     
     # Plot results
-    arith_ops = ["addition", "subtraction", "scalar_mul", "dot_product", "cross_product"]
-    derived_props = ["mass", "pt", "eta", "phi", "magnitude", "theta", "rho"]
+    # Remove operations that don't have Scikit Vector equivalents
+    arith_ops = ["addition", "subtraction", "scalar_mul"]  # Removed dot_product and cross_product
+    derived_props = ["mass", "pt", "eta", "phi"]  # Removed magnitude, theta, rho
     
     plot_arithmetic_results(sizes, arith_results, vector_types, arith_ops, "benchmarks/plots/benchmark_arithmetic.pdf")
     plot_derived_results(sizes, derived_results, vector_types, derived_props, "benchmarks/plots/benchmark_derived.pdf")
@@ -461,7 +379,5 @@ def run_benchmarks():
 
 if __name__ == "__main__":
     # Create plots directory if it doesn't exist
-    import os
     os.makedirs("benchmarks/plots", exist_ok=True)
-    
     run_benchmarks()
