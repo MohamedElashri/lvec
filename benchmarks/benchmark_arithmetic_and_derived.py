@@ -324,7 +324,7 @@ def plot_caching_results(sizes, cache_results, save_path="benchmark_caching.pdf"
     ax.legend(fontsize=12)
     
     plt.tight_layout()
-    plt.savefig(os.path.join('benchmarks/plots', save_path), bbox_inches='tight')
+    plt.savefig(os.path.join('plots', save_path), bbox_inches='tight')
     plt.close()
 
 def run_benchmarks():
@@ -368,16 +368,16 @@ def run_benchmarks():
     arith_ops = ["addition", "subtraction", "scalar_mul"]  # Removed dot_product and cross_product
     derived_props = ["mass", "pt", "eta", "phi"]  # Removed magnitude, theta, rho
     
-    plot_arithmetic_results(sizes, arith_results, vector_types, arith_ops, "benchmarks/plots/benchmark_arithmetic.pdf")
-    plot_derived_results(sizes, derived_results, vector_types, derived_props, "benchmarks/plots/benchmark_derived.pdf")
-    plot_caching_results(sizes, cache_results, "benchmarks/plots/benchmark_caching.pdf")
+    plot_arithmetic_results(sizes, arith_results, vector_types, arith_ops, "benchmark_arithmetic.pdf")
+    plot_derived_results(sizes, derived_results, vector_types, derived_props, "benchmark_derived.pdf")
+    plot_caching_results(sizes, cache_results, "benchmark_caching.pdf")
     
     print("\nBenchmarks completed. Plots saved to:")
-    print("  - benchmarks/plots/benchmark_arithmetic.pdf")
-    print("  - benchmarks/plots/benchmark_derived.pdf")
-    print("  - benchmarks/plots/benchmark_caching.pdf")
+    print("  - plots/benchmark_arithmetic.pdf")
+    print("  - plots/benchmark_derived.pdf")
+    print("  - plots/benchmark_caching.pdf")
 
 if __name__ == "__main__":
     # Create plots directory if it doesn't exist
-    os.makedirs("benchmarks/plots", exist_ok=True)
+    os.makedirs("plots", exist_ok=True)
     run_benchmarks()
