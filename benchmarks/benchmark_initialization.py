@@ -1,11 +1,13 @@
 import numpy as np
 import timeit
 import matplotlib.pyplot as plt
-from lvec import LVec
-import vector
 import tracemalloc
 import gc
 import time
+import os
+from lvec import LVec
+import vector
+from plotting_utils import plot_combined_performance, set_publication_style, COLORS
 
 def measure_memory_usage(operation, n_repeats=5):
     """Measure memory usage for an operation."""
@@ -39,7 +41,7 @@ def measure_initialization_time(init_function, n_repeats=5, number=10):
 
 def benchmark_initialization_overhead(sizes, n_repeats=5):
     """
-    Benchmark initialization overhead between LVec and vector package.
+    Benchmark initialization overhead between lvec and vector package.
     
     Parameters:
     -----------
@@ -63,7 +65,7 @@ def benchmark_initialization_overhead(sizes, n_repeats=5):
         print(f"\nBenchmarking initialization with {size:,} vectors:")
         px, py, pz, E = generate_test_data(size)
         
-        # Benchmark LVec initialization
+        # Benchmark lvec initialization
         def lvec_init():
             return LVec(px, py, pz, E)
             
@@ -88,10 +90,10 @@ def benchmark_initialization_overhead(sizes, n_repeats=5):
         vector_memory.append(vector_mem)
         
         print(f"  Results for {size:,} vectors:")
-        print(f"    LVec:   {lvec_mean*1000:.3f} ± {lvec_std*1000:.3f} ms, {lvec_mem:.2f} MB")
-        print(f"    Vector: {vector_mean*1000:.3f} ± {vector_std*1000:.3f} ms, {vector_mem:.2f} MB")
-        print(f"    Speed Ratio:  {vector_mean/lvec_mean:.2f}x faster with LVec")
-        print(f"    Memory Ratio: {vector_mem/lvec_mem:.2f}x more memory efficient with LVec")
+        print(f"    lvec:   {lvec_mean*1000:.3f} ± {lvec_std*1000:.3f} ms, {lvec_mem:.2f} MB")
+        print(f"    vector: {vector_mean*1000:.3f} ± {vector_std*1000:.3f} ms, {vector_mem:.2f} MB")
+        print(f"    Speed Ratio:  {vector_mean/lvec_mean:.2f}x faster with lvec")
+        print(f"    Memory Ratio: {vector_mem/lvec_mem:.2f}x more memory efficient with lvec")
     
     return (np.array(lvec_times), np.array(lvec_errors), 
             np.array(vector_times), np.array(vector_errors),
@@ -124,9 +126,9 @@ def benchmark_cached_initialization():
     
     px, py, pz, E = generate_test_data(size)
     
-    # Measure LVec repeated initialization
+    # Measure lvec repeated initialization
     lvec_times = []
-    print("  Measuring LVec repeated initialization...")
+    print("  Measuring lvec repeated initialization...")
     for i in range(repeats):
         start = time.time()
         vec = LVec(px, py, pz, E)
@@ -145,85 +147,50 @@ def benchmark_cached_initialization():
         print(f"    Iteration {i+1}: {vector_times[-1]:.3f} ms")
     
     # Plot results
+    set_publication_style()
     plt.figure(figsize=(10, 6))
-    plt.plot(range(1, repeats+1), lvec_times, 'o-', label='LVec', color='#3498db', linewidth=2)
-    plt.plot(range(1, repeats+1), vector_times, 'o-', label='vector', color='#9b59b6', linewidth=2)
+    plt.plot(range(1, repeats+1), lvec_times, 'o-', label='lvec', color=COLORS['lvec'], linewidth=2)
+    plt.plot(range(1, repeats+1), vector_times, 'o-', label='vector', color=COLORS['vector'], linewidth=2)
     plt.xlabel('Initialization Iteration', fontsize=12)
     plt.ylabel('Time (ms)', fontsize=12)
     plt.title('Repeated Initialization Performance (Caching Effects)', fontsize=14)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend(fontsize=12)
-    plt.savefig('benchmarks/plots/cached_initialization_benchmark.pdf', dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join('benchmarks/plots', 'cached_initialization_benchmark.pdf'), bbox_inches='tight')
     plt.close()
     
     return lvec_times, vector_times
 
-def plot_results(sizes, lvec_data, vector_data, title="LVec vs vector Initialization Overhead"):
-    """Plot benchmark results."""
+def plot_results(sizes, lvec_data, vector_data, title="lvec vs vector Initialization Overhead"):
+    """Plot benchmark results using standardized plotting utilities."""
     lvec_times, lvec_errors, lvec_memory = lvec_data
     vector_times, vector_errors, vector_memory = vector_data
     
-    # Convert to milliseconds
-    lvec_times *= 1000
-    vector_times *= 1000
-    
-    # Create figure with two subplots
-    plt.style.use('default')
-    fig = plt.figure(figsize=(12, 10))
-    gs = fig.add_gridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.3)
-    
-    # Upper plot: timing comparison
-    ax1 = fig.add_subplot(gs[0])
-    ax1.plot(sizes, lvec_times, 'o-', label='LVec', color='#3498db', linewidth=2, markersize=8)
-    ax1.plot(sizes, vector_times, 'o-', label='vector', color='#9b59b6', linewidth=2, markersize=8)
-    ax1.set_xscale('log')
-    ax1.set_yscale('log')
-    ax1.set_ylabel('Initialization Time (ms)', fontsize=12)
-    ax1.set_title(title, fontsize=14, pad=15)
-    ax1.grid(True, which='both', linestyle='--', alpha=0.7)
-    ax1.legend(fontsize=12)
-    ax1.tick_params(labelsize=10)
-    
-    # Middle plot: memory usage
-    ax2 = fig.add_subplot(gs[1])
-    ax2.plot(sizes, lvec_memory, 'o-', label='LVec', color='#2ecc71', linewidth=2, markersize=8)
-    ax2.plot(sizes, vector_memory, 'o-', label='vector', color='#e74c3c', linewidth=2, markersize=8)
-    ax2.set_xscale('log')
-    ax2.set_yscale('log')
-    ax2.set_ylabel('Memory Usage (MB)', fontsize=12)
-    ax2.grid(True, which='both', linestyle='--', alpha=0.7)
-    ax2.legend(fontsize=12)
-    ax2.tick_params(labelsize=10)
-    
-    # Bottom plot: performance ratio
-    ax3 = fig.add_subplot(gs[2])
-    ax3.plot(sizes, vector_times / lvec_times, 'o-', label='Time Ratio (vector/LVec)', 
-             color='#f39c12', linewidth=2, markersize=8)
-    ax3.plot(sizes, vector_memory / lvec_memory, 'o-', label='Memory Ratio (vector/LVec)', 
-             color='#16a085', linewidth=2, markersize=8)
-    ax3.set_xscale('log')
-    ax3.axhline(y=1.0, color='gray', linestyle='--', alpha=0.7)
-    ax3.set_xlabel('Number of Vectors', fontsize=12)
-    ax3.set_ylabel('Ratio (vector/LVec)', fontsize=12)
-    ax3.grid(True, which='both', linestyle='--', alpha=0.7)
-    ax3.legend(fontsize=12)
-    ax3.tick_params(labelsize=10)
-    
-    # Add minor gridlines
-    ax1.grid(True, which='minor', linestyle=':', alpha=0.4)
-    ax2.grid(True, which='minor', linestyle=':', alpha=0.4)
-    ax3.grid(True, which='minor', linestyle=':', alpha=0.4)
-    
-    plt.savefig('benchmarks/plots/initialization_benchmark_results.pdf', dpi=300, bbox_inches='tight')
-    plt.close()
+    plot_combined_performance(
+        sizes,
+        lvec_times,
+        vector_times,
+        lvec_memory,
+        vector_memory,
+        title=title,
+        filename='initialization_benchmark.pdf'
+    )
 
 if __name__ == '__main__':
-    print("=== LVec vs vector Initialization Overhead Benchmark ===")
+    print("=== lvec vs vector Initialization Overhead Benchmark ===")
+    
+    # Create plots directory if it doesn't exist
+    os.makedirs("benchmarks/plots", exist_ok=True)
     
     # Run main benchmarks
-    batch_results = benchmark_batch_sizes()
+    sizes = [10, 100, 1000, 10000, 100000, 1000000]
+    results = benchmark_initialization_overhead(sizes)
+    plot_results(sizes, 
+                (results[0], results[1], results[4]), 
+                (results[2], results[3], results[5]))
     
-    # Run the cached initialization benchmark
-    cache_results = benchmark_cached_initialization()
+    # Run additional benchmarks
+    batch_results = benchmark_batch_sizes()
+    cached_results = benchmark_cached_initialization()
     
     print("\nBenchmark completed. Results saved to PDF files.")

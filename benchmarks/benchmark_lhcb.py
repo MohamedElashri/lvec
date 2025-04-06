@@ -38,14 +38,41 @@ PLOTS_DIR = os.path.join(SCRIPT_DIR, "plots")
 # Create plots directory if it doesn't exist
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
-# Set LHCb style
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.family'] = 'serif'
-plt.rcParams['font.serif'] = 'Times New Roman'
-plt.rcParams['font.size'] = 12
-plt.rcParams['axes.labelsize'] = 14
-plt.rcParams['axes.titlesize'] = 16
-plt.rcParams['figure.figsize'] = (12, 8)
+# Set modern scientific plotting style
+plt.style.use('default')
+plt.rcParams.update({
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Helvetica', 'Arial', 'DejaVu Sans'],
+    'font.size': 11,
+    'axes.labelsize': 12,
+    'axes.titlesize': 14,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+    'figure.figsize': (10, 7),
+    'figure.dpi': 150,
+    'savefig.dpi': 300,
+    'savefig.format': 'pdf',
+    'axes.grid': False,
+    'lines.linewidth': 2,
+    'lines.markersize': 6,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.linewidth': 1.2,
+    'xtick.major.width': 1.2,
+    'ytick.major.width': 1.2
+})
+
+# Define professional color palette
+COLORS = {
+    'vector': '#4472C4',  # Microsoft blue
+    'lvec': '#70AD47',    # Microsoft green
+    'highlight': '#ED7D31', # Microsoft orange
+    'accent1': '#5B9BD5',  # Light blue
+    'accent2': '#FFC000',  # Gold
+    'gray': '#7F7F7F',     # Gray
+    'background': '#F2F2F2' # Light gray background
+}
 
 class Timer:
     """Simple context manager for timing code blocks."""
@@ -61,13 +88,6 @@ class Timer:
         self.interval = self.end - self.start
         print(f"{self.name} took {self.interval:.6f} seconds")
 
-def add_lhcb_label(ax, x=0.85, y=0.85):
-    """Add the LHCb label to the plot"""
-    ax.text(x, y, "LHCb", fontname="Times New Roman",
-            fontsize=16, transform=ax.transAxes,
-            bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
-
-# Download the ROOT file if not present
 def download_data():
     url = "https://opendata.cern.ch/record/4900/files/B2HHH_MagnetDown.root"
     filename = "B2HHH_MagnetDown.root"
@@ -222,99 +242,274 @@ def lvec_analysis(data, pion_mass=0.13957):
 
 def plot_performance_comparison(vector_time, lvec_time, memory_vector, memory_lvec, iterations):
     """Plot performance comparison between Vector and LVec implementations."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    
-    # Time comparison
-    methods = ['Scikit-HEP Vector', 'LVec']
-    times = [vector_time, lvec_time]
-    colors = ['#1f77b4', '#2ca02c']
-    
-    ax1.bar(methods, times, color=colors)
-    ax1.set_ylabel('Time (seconds)')
-    ax1.set_title(f'Execution Time ({iterations} iterations)')
-    for i, v in enumerate(times):
-        ax1.text(i, v + 0.01, f"{v:.3f}s", ha='center')
-    
-    # Speedup calculation
+    # Calculate speedup and memory reduction
     speedup = vector_time / lvec_time if lvec_time > 0 else float('inf')
-    speedup_text = f"Speedup: {speedup:.2f}x" if speedup >= 1 else f"Slowdown: {1/speedup:.2f}x"
-    ax1.text(0.5, 0.9, speedup_text, 
-             transform=ax1.transAxes, ha='center',
-             bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
+    mem_reduction = (memory_vector - memory_lvec) / memory_vector * 100 if memory_vector > memory_lvec else 0
     
-    # Memory comparison
+    # Create figure with a light gray background
+    fig = plt.figure(figsize=(12, 8))
+    fig.patch.set_facecolor(COLORS['background'])
+    
+    # Create a 2x2 grid for the plots
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[2, 1], 
+                         hspace=0.3, wspace=0.3)
+    
+    # Time comparison - horizontal bar chart (more impactful)
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax1.patch.set_facecolor('white')
+    
+    # Create horizontal bar chart
+    methods = ['Scikit-HEP\nVector', 'LVec']
+    times = [vector_time, lvec_time]
+    colors = [COLORS['vector'], COLORS['lvec']]
+    
+    y_pos = np.arange(len(methods))
+    ax1.barh(y_pos, times, color=colors, height=0.5, 
+            edgecolor='white', linewidth=0.5)
+    
+    # Add value labels inside bars
+    for i, v in enumerate(times):
+        ax1.text(v/2, i, f"{v:.3f}s", 
+                ha='center', va='center', color='white', fontweight='bold')
+    
+    # Customize time plot
+    ax1.set_yticks(y_pos)
+    ax1.set_yticklabels(methods, fontweight='bold')
+    ax1.set_xlabel('Execution Time (seconds)', fontweight='bold')
+    ax1.set_title('Execution Time Comparison', fontweight='bold', pad=15)
+    ax1.invert_yaxis()  # Puts Vector at the top
+    
+    # Memory comparison - horizontal bar chart
+    ax2 = fig.add_subplot(gs[1, 0])
+    ax2.patch.set_facecolor('white')
+    
     memory_usage = [memory_vector, memory_lvec]
-    ax2.bar(methods, memory_usage, color=colors)
-    ax2.set_ylabel('Memory Usage (MB)')
-    ax2.set_title('Peak Memory Usage')
-    for i, v in enumerate(memory_usage):
-        ax2.text(i, v + 0.5, f"{v:.1f} MB", ha='center')
+    ax2.barh(y_pos, memory_usage, color=colors, height=0.5,
+            edgecolor='white', linewidth=0.5)
     
-    # Memory savings
-    if memory_vector > memory_lvec:
-        mem_reduction = (memory_vector - memory_lvec) / memory_vector * 100
-        mem_text = f"Memory reduction: {mem_reduction:.1f}%"
+    # Add value labels inside bars
+    for i, v in enumerate(memory_usage):
+        ax2.text(v/2, i, f"{v:.1f} MB", 
+                ha='center', va='center', color='white', fontweight='bold')
+    
+    # Customize memory plot
+    ax2.set_yticks(y_pos)
+    ax2.set_yticklabels(methods, fontweight='bold')
+    ax2.set_xlabel('Peak Memory Usage (MB)', fontweight='bold')
+    ax2.set_title('Memory Usage Comparison', fontweight='bold', pad=15)
+    ax2.invert_yaxis()  # Puts Vector at the top
+    
+    # Speedup visualization - gauge chart
+    ax3 = fig.add_subplot(gs[0, 1], polar=True)
+    ax3.patch.set_facecolor('white')
+    
+    # Create gauge chart for speedup
+    if speedup >= 1:
+        # Normalize speedup to a 0-100 scale for gauge
+        # Cap at 3x for visualization purposes
+        norm_speedup = min(speedup, 3) / 3 * 100
+        gauge_color = COLORS['lvec']
+        speedup_text = f"{speedup:.2f}×\nfaster"
+    else:
+        norm_speedup = min(1/speedup, 3) / 3 * 100
+        gauge_color = COLORS['vector']
+        speedup_text = f"{1/speedup:.2f}×\nslower"
+    
+    # Background ring (gray)
+    ax3.barh(0, 100, left=0, height=0.6, color=COLORS['gray'], alpha=0.3)
+    # Foreground ring (colored)
+    ax3.barh(0, norm_speedup, left=0, height=0.6, color=gauge_color)
+    
+    # Remove ticks and labels
+    ax3.set_xticks([])
+    ax3.set_yticks([])
+    ax3.set_theta_zero_location('N')
+    ax3.set_theta_direction(-1)  # Clockwise
+    
+    # Set limits for semi-circle
+    ax3.set_thetamin(0)
+    ax3.set_thetamax(180)
+    
+    # Add text in the middle
+    ax3.text(0, -0.2, speedup_text, ha='center', va='center', 
+             fontsize=14, fontweight='bold', color='black')
+    
+    # Add title
+    ax3.set_title('Speed Comparison', fontweight='bold', pad=15)
+    
+    # Memory savings visualization - gauge chart
+    ax4 = fig.add_subplot(gs[1, 1], polar=True)
+    ax4.patch.set_facecolor('white')
+    
+    # Create gauge chart for memory savings
+    if mem_reduction > 0:
+        # Normalize memory reduction to a 0-100 scale for gauge
+        # Cap at 50% for visualization purposes
+        norm_mem = min(mem_reduction, 50) / 50 * 100
+        mem_color = COLORS['lvec']
+        mem_text = f"{mem_reduction:.1f}%\nless memory"
     else:
         mem_increase = (memory_lvec - memory_vector) / memory_vector * 100
-        mem_text = f"Memory increase: {mem_increase:.1f}%"
+        norm_mem = min(mem_increase, 50) / 50 * 100
+        mem_color = COLORS['vector']
+        mem_text = f"{mem_increase:.1f}%\nmore memory"
     
-    ax2.text(0.5, 0.9, mem_text, 
-             transform=ax2.transAxes, ha='center',
-             bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
+    # Background ring (gray)
+    ax4.barh(0, 100, left=0, height=0.6, color=COLORS['gray'], alpha=0.3)
+    # Foreground ring (colored)
+    ax4.barh(0, norm_mem, left=0, height=0.6, color=mem_color)
     
-    plt.tight_layout()
+    # Remove ticks and labels
+    ax4.set_xticks([])
+    ax4.set_yticks([])
+    ax4.set_theta_zero_location('N')
+    ax4.set_theta_direction(-1)  # Clockwise
     
-    # Save plot to plots directory
+    # Set limits for semi-circle
+    ax4.set_thetamin(0)
+    ax4.set_thetamax(180)
+    
+    # Add text in the middle
+    ax4.text(0, -0.2, mem_text, ha='center', va='center', 
+             fontsize=14, fontweight='bold', color='black')
+    
+    # Add title
+    ax4.set_title('Memory Comparison', fontweight='bold', pad=15)
+    
+    # Add main title
+    fig.suptitle(f'LVec Performance Benchmark ({iterations} iterations)', 
+                 fontsize=16, fontweight='bold', y=0.98)
+    
+    # Add benchmark details as a footer
+    plt.figtext(0.5, 0.01, 
+                f"Benchmark: B→hhh decay analysis | Date: {time.strftime('%Y-%m-%d')}",
+                ha="center", fontsize=9, fontstyle='italic')
+    
+    plt.tight_layout(rect=[0, 0.02, 1, 0.95])
+    
+    # Save plot in PDF format
     plot_path = os.path.join(PLOTS_DIR, "lvec_benchmark_results.pdf")
-    plt.savefig(plot_path, bbox_inches='tight')
+    plt.savefig(plot_path, bbox_inches='tight', dpi=300, facecolor=fig.get_facecolor())
+    
     print(f"Performance comparison plot saved as '{plot_path}'")
 
-def plot_mass_comparison(vector_results, lvec_results):
-    """Plot mass distribution comparison to verify both methods produce the same physics results."""
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
+def plot_physics_results(vector_results, lvec_results):
+    """Plot comprehensive physics results comparison."""
+    # Create figure with a light gray background
+    fig = plt.figure(figsize=(12, 10))
+    fig.patch.set_facecolor(COLORS['background'])
     
-    # Common histogram parameters
-    bins = np.linspace(0, 5.5, 100)
+    # Create a 2x2 grid for the plots
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1], 
+                         hspace=0.3, wspace=0.3)
+    
+    # Function to create a physics plot with inset ratio
+    def create_physics_plot(ax, vector_data, lvec_data, title, xlabel, bins=100, range_min=0, range_max=5.5):
+        ax.patch.set_facecolor('white')
+        
+        # Create bins
+        bins = np.linspace(range_min, range_max, bins)
+        bin_width = bins[1] - bins[0]
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+        
+        # Calculate histograms
+        vector_hist, _ = np.histogram(vector_data, bins=bins)
+        lvec_hist, _ = np.histogram(lvec_data, bins=bins)
+        
+        # Plot histograms
+        ax.hist(vector_data, bins=bins, label='Vector', histtype='step', 
+               linewidth=2, color=COLORS['vector'], alpha=0.9)
+        ax.hist(lvec_data, bins=bins, label='LVec', histtype='step', 
+               linewidth=2, color=COLORS['lvec'], alpha=0.9)
+        
+        # Add shaded area under curves
+        ax.hist(vector_data, bins=bins, histtype='stepfilled', 
+               linewidth=0, color=COLORS['vector'], alpha=0.1)
+        ax.hist(lvec_data, bins=bins, histtype='stepfilled', 
+               linewidth=0, color=COLORS['lvec'], alpha=0.1)
+        
+        # Calculate ratio for inset ratio plot
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ratio = np.divide(lvec_hist, vector_hist)
+            ratio[~np.isfinite(ratio)] = 1.0  # Replace inf/NaN with 1.0
+        
+        # Create inset axis for ratio
+        inset_ax = ax.inset_axes([0.6, 0.02, 0.38, 0.25])
+        inset_ax.patch.set_facecolor('white')
+        inset_ax.plot(bin_centers, ratio, '-', linewidth=1.5, color=COLORS['highlight'])
+        inset_ax.axhline(y=1.0, color=COLORS['gray'], linestyle='--', alpha=0.7, linewidth=1)
+        
+        # Set y-range for ratio plot
+        inset_ax.set_ylim(0.95, 1.05)
+        inset_ax.set_ylabel('LVec/Vector', fontsize=8)
+        inset_ax.tick_params(axis='both', which='major', labelsize=7)
+        
+        # Remove spines
+        for spine in ['top', 'right']:
+            inset_ax.spines[spine].set_visible(False)
+        
+        # Formatting main plot
+        ax.set_xlabel(xlabel, fontweight='bold')
+        ax.set_ylabel(f'Candidates / {bin_width:.3f} GeV/c²', fontweight='bold')
+        ax.set_title(title, fontweight='bold', pad=10)
+        ax.legend(frameon=True, fancybox=True, framealpha=0.7, loc='upper right')
+        
+        # Add main title
+        fig.suptitle('Physics Results Comparison: Vector vs LVec', 
+                     fontsize=16, fontweight='bold', y=0.98)
     
     # Plot m12 distribution
-    ax1.hist(vector_results["m12"], bins=bins, label='Vector', histtype='step', 
-             linewidth=2, color='blue', alpha=0.7)
-    ax1.hist(lvec_results["m12"], bins=bins, label='LVec', histtype='step', 
-             linewidth=2, color='green', alpha=0.7)
-    ax1.set_xlabel('m(h1,h2) [GeV]')
-    ax1.set_ylabel('Candidates / 55 MeV')
-    add_lhcb_label(ax1)
-    ax1.legend()
+    ax1 = fig.add_subplot(gs[0, 0])
+    create_physics_plot(
+        ax1, 
+        vector_results["m12"], lvec_results["m12"],
+        'Two-Body Mass m(h1,h2)', 'm(h1,h2) [GeV/c²]'
+    )
     
     # Plot m23 distribution
-    ax2.hist(vector_results["m23"], bins=bins, label='Vector', histtype='step', 
-             linewidth=2, color='blue', alpha=0.7)
-    ax2.hist(lvec_results["m23"], bins=bins, label='LVec', histtype='step', 
-             linewidth=2, color='green', alpha=0.7)
-    ax2.set_xlabel('m(h2,h3) [GeV]')
-    ax2.set_ylabel('Candidates / 55 MeV')
-    add_lhcb_label(ax2)
-    ax2.legend()
+    ax2 = fig.add_subplot(gs[0, 1])
+    create_physics_plot(
+        ax2, 
+        vector_results["m23"], lvec_results["m23"],
+        'Two-Body Mass m(h2,h3)', 'm(h2,h3) [GeV/c²]'
+    )
     
     # Plot m13 distribution
-    ax3.hist(vector_results["m13"], bins=bins, label='Vector', histtype='step', 
-             linewidth=2, color='blue', alpha=0.7)
-    ax3.hist(lvec_results["m13"], bins=bins, label='LVec', histtype='step', 
-             linewidth=2, color='green', alpha=0.7)
-    ax3.set_xlabel('m(h1,h3) [GeV]')
-    ax3.set_ylabel('Candidates / 55 MeV')
-    add_lhcb_label(ax3)
-    ax3.legend()
+    ax3 = fig.add_subplot(gs[1, 0])
+    create_physics_plot(
+        ax3, 
+        vector_results["m13"], lvec_results["m13"],
+        'Two-Body Mass m(h1,h3)', 'm(h1,h3) [GeV/c²]'
+    )
     
-    # Add common title
-    fig.suptitle('Physics Results Comparison: Vector vs LVec', y=1.02)
+    # Plot three-body mass distribution
+    ax4 = fig.add_subplot(gs[1, 1])
+    create_physics_plot(
+        ax4, 
+        vector_results["three_body_mass"], lvec_results["three_body_mass"],
+        'Three-Body Mass m(h1,h2,h3)', 'm(h1,h2,h3) [GeV/c²]',
+        bins=80, range_min=4.5, range_max=6.0
+    )
     
-    # Adjust layout and save
-    plt.tight_layout()
+    # Highlight B meson mass region in three-body plot
+    b_mass = 5.279  # GeV/c²
+    b_width = 0.1   # Approximate width to highlight
+    ax4.axvspan(b_mass - b_width, b_mass + b_width, alpha=0.2, color=COLORS['highlight'])
+    ax4.axvline(b_mass, color=COLORS['highlight'], linestyle='--', alpha=0.7)
+    ax4.text(b_mass, ax4.get_ylim()[1]*0.95, 'B⁰', ha='center', va='top', 
+             color=COLORS['highlight'], fontweight='bold')
     
-    # Save plot to plots directory
+    # Add benchmark details as a footer
+    plt.figtext(0.5, 0.01, 
+                f"B→hhh decay analysis | Date: {time.strftime('%Y-%m-%d')}",
+                ha="center", fontsize=9, fontstyle='italic')
+    
+    plt.tight_layout(rect=[0, 0.02, 1, 0.95])
+    
+    # Save plot in PDF format
     plot_path = os.path.join(PLOTS_DIR, "physics_comparison.pdf")
-    plt.savefig(plot_path, bbox_inches='tight')
+    plt.savefig(plot_path, bbox_inches='tight', dpi=300, facecolor=fig.get_facecolor())
+    
     print(f"Physics comparison plot saved as '{plot_path}'")
 
 def run_benchmark(iterations=10):
@@ -364,7 +559,7 @@ def run_benchmark(iterations=10):
     # Create visualizations
     print("\n5. Creating performance comparison plots...")
     plot_performance_comparison(avg_time_vector, avg_time_lvec, memory_vector, memory_lvec, iterations)
-    plot_mass_comparison(results_vector, results_lvec)
+    plot_physics_results(results_vector, results_lvec)
     
     # Print summary
     print("\n===== BENCHMARK SUMMARY =====")
