@@ -22,13 +22,15 @@ class LVec:
         _cache: Property caching system for optimized property calculations
     """
     
-    def __init__(self, px, py, pz, E):
+    def __init__(self, px, py, pz, E, max_cache_size=None, default_ttl=None):
         """
         Initialize Lorentz vector from components.
         
         Args:
             px, py, pz: Momentum components (float, list, ndarray, or ak.Array)
             E: Energy (float, list, ndarray, or ak.Array)
+            max_cache_size: Maximum number of entries in the cache (None for unlimited)
+            default_ttl: Default time-to-live for cached values in seconds (None for no expiration)
         
         Raises:
             ShapeError: If input arrays have inconsistent shapes
@@ -53,8 +55,8 @@ class LVec:
             elif self._lib == 'ak' and ak.any(self._E < 0):
                 raise InputError("E", "array", "energy values must be non-negative")
                 
-        # Initialize the enhanced caching system
-        self._cache = PropertyCache()
+        # Initialize the enhanced caching system with memory optimization features
+        self._cache = PropertyCache(max_size=max_cache_size, default_ttl=default_ttl)
         
         # Register property dependencies
         self._cache.register_dependency('pt', ['px', 'py'])
@@ -71,17 +73,17 @@ class LVec:
         self._cache.register_dependency('pt_squared', ['px', 'py'])
         
     @classmethod
-    def from_p4(cls, px, py, pz, E):
+    def from_p4(cls, px, py, pz, E, max_cache_size=None, default_ttl=None):
         """Create from Cartesian components."""
-        return cls(px, py, pz, E)
+        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl)
     
     @classmethod
-    def from_ptepm(cls, pt, eta, phi, m):
+    def from_ptepm(cls, pt, eta, phi, m, max_cache_size=None, default_ttl=None):
         """Create from pt, eta, phi, mass."""
         # First convert to arrays and get the lib type
         pt, eta, phi, m, lib = ensure_array(pt, eta, phi, m)
         px, py, pz, E = compute_p4_from_ptepm(pt, eta, phi, m, lib)
-        return cls(px, py, pz, E)
+        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl)
     
     @classmethod
     def from_ary(cls, ary_dict):
@@ -108,7 +110,7 @@ class LVec:
         self._cache.touch_component('pz')
         self._cache.touch_component('E')
             
-    def _get_cached(self, key, func, dependencies=None):
+    def _get_cached(self, key, func, dependencies=None, ttl=None):
         """
         Get cached value or compute and cache it.
         
@@ -116,24 +118,45 @@ class LVec:
             key: Property or intermediate result name
             func: Function to compute the value if not cached
             dependencies: List of components this value depends on (if not already registered)
+            ttl: Time-to-live in seconds for this specific value (overrides default)
             
         Returns:
             The cached or computed value
         """
-        return self._cache.get_cached(key, func, dependencies)
+        return self._cache.get_cached(key, func, dependencies, ttl)
     
-    def _get_intermediate(self, key, func):
+    def _get_intermediate(self, key, func, ttl=None):
         """
         Get or compute an intermediate result for reuse across properties.
         
         Args:
             key: Intermediate result identifier
             func: Function to compute the result
+            ttl: Time-to-live in seconds for this specific value (overrides default)
             
         Returns:
             The intermediate result
         """
-        return self._cache.get_intermediate(key, func)
+        return self._cache.get_intermediate(key, func, ttl)
+        
+    def set_ttl(self, property_name, ttl_seconds):
+        """
+        Set or update the time-to-live for a specific property.
+        
+        Args:
+            property_name: Name of the property to set TTL for (e.g., 'pt', 'mass')
+            ttl_seconds: Time-to-live in seconds (None for no expiration)
+        """
+        self._cache.set_ttl(property_name, ttl_seconds)
+        
+    def clear_expired(self):
+        """
+        Remove all expired properties from the cache.
+        
+        Returns:
+            int: Number of expired properties removed
+        """
+        return self._cache.clear_expired()
     
     # Cache instrumentation properties
     @property
@@ -145,6 +168,11 @@ class LVec:
     def cache_hit_ratio(self):
         """Get the overall cache hit ratio as a float between 0 and 1."""
         return self._cache.get_hit_ratio()
+    
+    @property
+    def cache_size(self):
+        """Get the current number of items in the cache."""
+        return len(self._cache)
     
     def reset_cache_stats(self):
         """Reset all cache hit and miss counters to zero."""
