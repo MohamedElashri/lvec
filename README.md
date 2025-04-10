@@ -48,6 +48,22 @@ v3 = v1 + v2
 v4 = v1 * 2.0
 ```
 
+### Memory Optimization
+```python
+# Create vector with cache size limit (LRU eviction)
+v = LVec(px=1.0, py=2.0, pz=3.0, E=4.0, max_cache_size=100)
+
+# Create vector with TTL for all properties
+v_ttl = LVec(px=1.0, py=2.0, pz=3.0, E=4.0, default_ttl=60)  # 60 second TTL
+
+# Set TTL for specific property
+v.set_ttl('pt', 10)  # 10 second TTL for transverse momentum
+
+# Get cache statistics
+stats = v.cache_stats
+print(f"Cache hit ratio: {v.cache_hit_ratio}")
+```
+
 ### Reference Frames
 ```python
 from lvec import LVec, Frame
@@ -125,7 +141,7 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|----------|
-| `__init__` | Create a Lorentz vector | `px, py, pz, E` | `LVec` |
+| `__init__` | Create a Lorentz vector | `px, py, pz, E, max_cache_size=None, default_ttl=None` | `LVec` |
 | `from_ptepm` | Create from pt, eta, phi, mass | `pt, eta, phi, m` | `LVec` |
 | `from_p4` | Create from px, py, pz, E | `px, py, pz, E` | `LVec` |
 | `from_ary` | Create from dictionary | `ary_dict` with px, py, pz, E keys | `LVec` |
@@ -133,6 +149,12 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 | `boost` | Boost vector to new frame | `bx, by, bz` | `LVec` |
 | `to_frame` | Transform to specified frame | `frame` | `LVec` |
 | `transform_frame` | Transform between frames | `current_frame, target_frame` | `LVec` |
+| `set_ttl` | Set TTL for property | `property_name, ttl_seconds` | None |
+| `clear_expired` | Remove expired cache values | - | `int` (count) |
+| `cache_stats` | Get cache statistics | - | `dict` |
+| `cache_hit_ratio` | Get cache hit ratio | - | `float` |
+| `reset_cache_stats` | Reset cache statistics | - | None |
+| `cache_size` | Get current cache size | - | `int` |
 | `mass` | Get invariant mass | - | `float` |
 | `pt` | Get transverse momentum | - | `float` |
 | `eta` | Get pseudorapidity | - | `float` |
