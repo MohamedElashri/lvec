@@ -661,6 +661,91 @@ class LVec:
         """
 ```
 
+### Memory Optimization Features
+
+LVec includes a sophisticated caching system with memory optimization features to enhance performance and resource management, particularly valuable when working with large datasets in High Energy Physics analysis.
+
+#### Cache Size Limits with LRU Eviction
+
+You can limit the maximum number of cached properties to prevent memory bloat:
+
+```python
+# Create a vector with max cache size of 100 entries
+v = LVec(px=1.0, py=2.0, pz=3.0, E=4.0, max_cache_size=100)
+
+# When cache exceeds this limit, least recently used properties are evicted
+```
+
+When the cache reaches the size limit, the Least Recently Used (LRU) eviction policy automatically removes the oldest accessed entries to make room for new calculations.
+
+#### Time-To-Live (TTL) Expiration
+
+Control how long cached values remain valid with TTL settings:
+
+```python
+# Create a vector with default TTL of 60 seconds for all properties
+v = LVec(px=1.0, py=2.0, pz=3.0, E=4.0, default_ttl=60)
+
+# Set different TTL values for specific properties
+v.set_ttl('pt', 10)      # Set pt to expire after 10 seconds
+v.set_ttl('eta', 30)     # Set eta to expire after 30 seconds
+v.set_ttl('mass', None)  # Never expire mass (unless cache size limit is reached)
+
+# Clear all expired cache entries
+expired_count = v.clear_expired()
+print(f"Removed {expired_count} expired properties")
+```
+
+TTL functionality is particularly useful for:
+- Ensuring calculations use fresh values in long-running analyses
+- Managing memory in workflows where property relevance changes over time
+- Forcing recalculation of properties that may have numerical instability
+
+#### Cache Statistics and Monitoring
+
+Monitor cache performance with built-in statistics:
+
+```python
+# Access detailed cache statistics
+stats = v.cache_stats
+print(f"Total cache hits: {sum(prop['hits'] for prop in stats['properties'].values())}")
+print(f"Total cache misses: {sum(prop['misses'] for prop in stats['properties'].values())}")
+
+# Get overall cache hit ratio (higher is better)
+hit_ratio = v.cache_hit_ratio
+print(f"Cache hit ratio: {hit_ratio:.2f}")
+
+# Reset statistics to measure performance of a specific section of code
+v.reset_cache_stats()
+```
+
+#### Combining Features
+
+You can combine size limits and TTL for comprehensive memory management:
+
+```python
+# Create a vector with both memory optimization features
+v = LVec(
+    px=1.0, py=2.0, pz=3.0, E=4.0,
+    max_cache_size=100,   # Limit cache size
+    default_ttl=300       # Default 5-minute expiration
+)
+
+# Properties will be removed if either:
+# 1. They exceed their TTL expiration time
+# 2. The cache exceeds max_cache_size (LRU eviction)
+```
+
+#### Implementation Details
+
+The caching system tracks:
+- Dependencies between properties and vector components
+- Access timestamps for TTL expiration
+- Access order for LRU eviction
+- Hit/miss statistics per property
+
+Cache invalidation happens automatically when vector components are modified, ensuring calculations always use correct values.
+
 ### Working with Batch Data
 
 ```python
