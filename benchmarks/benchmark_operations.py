@@ -5,6 +5,7 @@ import tracemalloc
 import gc
 from lvec import LVec
 import vector
+from plotting_utils import plot_operations_grid
 
 def measure_memory_usage(operation, n_repeats=5):
     """Measure memory usage for an operation."""
@@ -94,50 +95,14 @@ def benchmark_operation(operation_name, size, n_repeats=10):
     }
 
 def plot_all_operations(sizes, all_results, operations):
-    """Plot all operation comparisons in subplots."""
-    plt.style.use('default')
-    n_ops = len(operations)
-    n_cols = 3
-    n_rows = (n_ops + n_cols - 1) // n_cols  # Ceiling division
-    
-    fig = plt.figure(figsize=(15, 4 * n_rows))
-    gs = fig.add_gridspec(n_rows, n_cols, hspace=0.4, wspace=0.3)
-    
-    for idx, operation in enumerate(operations):
-        row = idx // n_cols
-        col = idx % n_cols
-        ax = fig.add_subplot(gs[row, col])
-        
-        results = all_results[operation]
-        
-        # Extract data
-        lvec_times = np.array([r['lvec']['time'] for r in results]) * 1000  # to ms
-        vector_times = np.array([r['vector']['time'] for r in results]) * 1000
-        
-        # Timing plot
-        ax.plot(sizes, lvec_times, 'o-', label='lvec', color='#3498db', 
-                linewidth=2, markersize=6)
-        ax.plot(sizes, vector_times, 'o-', label='vector', color='#9b59b6', 
-                linewidth=2, markersize=6)
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.set_xlabel('Array Size', fontsize=10)
-        ax.set_ylabel('Time (ms)', fontsize=10)
-        ax.set_title(operation.replace('_', ' ').title(), fontsize=12)
-        ax.grid(True, which='both', linestyle='--', alpha=0.7)
-        ax.grid(True, which='minor', linestyle=':', alpha=0.4)
-        ax.legend(fontsize=10)
-        ax.tick_params(labelsize=8)
-    
-    # Remove any empty subplots
-    for idx in range(len(operations), n_rows * n_cols):
-        row = idx // n_cols
-        col = idx % n_cols
-        fig.delaxes(fig.add_subplot(gs[row, col]))
-    
-    plt.suptitle('Performance Comparison of Operations', fontsize=14, y=1.02)
-    plt.savefig('benchmarks/plots/benchmark_all_operations.pdf', dpi=300, bbox_inches='tight')
-    plt.close()
+    """Plot all operation comparisons using standardized plotting utilities."""
+    plot_operations_grid(
+        sizes, 
+        all_results, 
+        operations, 
+        title='Performance Comparison of Operations', 
+        filename='benchmark_all_operations.pdf'
+    )
 
 if __name__ == '__main__':
     # Test with different array sizes
@@ -159,8 +124,8 @@ if __name__ == '__main__':
             lvec_time = result['lvec']['time'] * 1000
             vector_time = result['vector']['time'] * 1000
             ratio = vector_time / lvec_time
-            print(f"    LVec:   {lvec_time:.3f} ms")
-            print(f"    Vector: {vector_time:.3f} ms")
+            print(f"    lvec:   {lvec_time:.3f} ms")
+            print(f"    vector: {vector_time:.3f} ms")
             print(f"    Ratio:  {ratio:.2f}x")
         
         all_results[operation] = results
