@@ -6,6 +6,15 @@ from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_where)
 from .exceptions import ShapeError, BackendError
 
+# Import JIT-optimized functions if available
+try:
+    from .jit import (jit_compute_pt, jit_compute_p, jit_compute_mass,
+                     jit_compute_eta, jit_compute_phi, jit_compute_p4_from_ptepm,
+                     is_jit_available)
+    HAS_JIT = True
+except ImportError:
+    HAS_JIT = False
+
 def ensure_array(*args):
     """
     Convert inputs to consistent array type.
@@ -132,6 +141,121 @@ def check_shapes(*arrays):
                 shapes=shape_info
             )
 
+def _compute_pt_original(px, py, lib):
+    """
+    Original compute_pt implementation without JIT.
+    """
+    # Use the appropriate backend for the square root
+    pt = backend_sqrt(px*px + py*py, lib)
+    
+    # Convert to scalar only if both inputs were scalars
+    if isinstance(px, (float, int)) and isinstance(py, (float, int)):
+        return float(pt)
+    return pt
+
+def _compute_p_original(px, py, pz, lib):
+    """
+    Original compute_p implementation without JIT.
+    """
+    # Use the appropriate backend for the square root
+    p = backend_sqrt(px*px + py*py + pz*pz, lib)
+    
+    # Convert to scalar only if all inputs were scalars
+    if isinstance(px, (float, int)) and isinstance(py, (float, int)) and isinstance(pz, (float, int)):
+        return float(p)
+    return p
+
+def _compute_mass_original(E, p, lib):
+    """
+    Original compute_mass implementation without JIT.
+    """
+    # Calculate m² = E² - p²
+    m_squared = E*E - p*p
+    
+    # For proper physics, m² should be positive or zero
+    # Small negative values can occur due to numerical precision issues
+    negative_m_squared = False
+    
+    if isinstance(m_squared, (float, int)):
+        negative_m_squared = m_squared < 0
+        if negative_m_squared:
+            import warnings
+            warnings.warn(f"Negative mass-squared detected ({m_squared}), "
+                         "taking absolute value")
+    else:
+        if lib == 'np':
+            negative_m_squared = (m_squared < 0).any()
+            if negative_m_squared:
+                import warnings
+                warnings.warn(f"Negative mass-squared detected in array, "
+                             "taking absolute value")
+        elif lib == 'ak':
+            import awkward as ak
+            negative_m_squared = ak.any(m_squared < 0)
+            if negative_m_squared:
+                import warnings
+                warnings.warn(f"Negative mass-squared detected in array, "
+                             "taking absolute value")
+                
+    # Take the absolute value of m² if negative
+    if negative_m_squared:
+        if isinstance(m_squared, (float, int)):
+            m_squared = abs(m_squared)
+        elif lib == 'np':
+            m_squared = np.abs(m_squared)
+        elif lib == 'ak':
+            m_squared = ak.abs(m_squared)
+            
+    # Compute the square root
+    m = backend_sqrt(m_squared, lib)
+    
+    # Convert to scalar only if both inputs were scalars
+    if isinstance(E, (float, int)) and isinstance(p, (float, int)):
+        return float(m)
+    return m
+
+def _compute_eta_original(p, pz, lib):
+    """
+    Original compute_eta implementation without JIT.
+    """
+    # Small constant to avoid division by zero
+    epsilon = 1e-10
+    
+    # Compute eta using the numerically stable formula
+    eta = 0.5 * backend_log((p + pz) / (p - pz + epsilon), lib)
+    
+    # Convert to scalar only if both inputs were scalars
+    if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
+        return float(eta)
+    return eta
+
+def _compute_phi_original(px, py, lib):
+    """
+    Original compute_phi implementation without JIT.
+    """
+    # Use the appropriate backend for arc-tangent
+    phi = backend_atan2(py, px, lib)
+    
+    # Convert to scalar only if both inputs were scalars
+    if isinstance(px, (float, int)) and isinstance(py, (float, int)):
+        return float(phi)
+    return phi
+
+def _compute_p4_from_ptepm_original(pt, eta, phi, m, lib):
+    """
+    Original compute_p4_from_ptepm implementation without JIT.
+    """
+    # Calculate Cartesian components
+    px = pt * backend_cos(phi, lib)
+    py = pt * backend_sin(phi, lib)
+    pz = pt * backend_sinh(eta, lib)
+    
+    # Calculate total momentum and energy
+    p = backend_sqrt(px*px + py*py + pz*pz, lib)
+    E = backend_sqrt(p*p + m*m, lib)
+    
+    return px, py, pz, E
+
 def compute_pt(px, py, lib):
     """
     Compute transverse momentum.
@@ -148,13 +272,12 @@ def compute_pt(px, py, lib):
     scalar or array-like
         Transverse momentum with the same type as input
     """
-    # Use the appropriate backend for the square root
-    pt = backend_sqrt(px*px + py*py, lib)
+    # Use JIT version if available and applicable
+    if HAS_JIT and lib == 'np':
+        return jit_compute_pt(px, py, lib)
     
-    # Convert to scalar only if both inputs were scalars
-    if isinstance(px, (float, int)) and isinstance(py, (float, int)):
-        return float(pt)
-    return pt
+    # Fall back to original implementation
+    return _compute_pt_original(px, py, lib)
 
 def compute_p(px, py, pz, lib):
     """
@@ -172,14 +295,12 @@ def compute_p(px, py, pz, lib):
     scalar or array-like
         Total momentum with the same type as input
     """
-    # Use the appropriate backend for the square root
-    p = backend_sqrt(px*px + py*py + pz*pz, lib)
+    # Use JIT version if available and applicable
+    if HAS_JIT and lib == 'np':
+        return jit_compute_p(px, py, pz, lib)
     
-    # Convert to scalar only if all inputs were scalars
-    if isinstance(px, (float, int)) and isinstance(py, (float, int)) and isinstance(pz, (float, int)):
-        return float(p)
-    return p
-
+    # Fall back to original implementation
+    return _compute_p_original(px, py, pz, lib)
 
 def compute_mass(E, p, lib):
     """
@@ -203,50 +324,11 @@ def compute_mass(E, p, lib):
     scalar or array-like
         Mass with the same type as input
     """
-    import warnings
-    m2 = E*E - p*p
+    # If we have JIT and full p4 components available in the caller, 
+    # the caller should use jit_compute_mass directly
     
-    # Check for negative m² values
-    if isinstance(m2, (float, int)):
-        if m2 < 0:
-            warnings.warn(f"Negative m² value encountered: {m2}. Taking absolute value, but this may indicate unphysical particles or numerical issues.")
-            m2 = abs(m2)
-    else:
-        # For array inputs, check if any values are negative
-        has_negative = False
-        
-        if lib == 'ak' and HAS_AWKWARD:
-            # For Awkward arrays
-            try:
-                import awkward as ak
-                # Use ak.any for Awkward arrays
-                has_negative = ak.any(m2 < 0)
-            except Exception:
-                # Fallback if ak.any doesn't work
-                has_negative = any(m2 < 0)
-        else:
-            # For NumPy arrays
-            if hasattr(m2, 'any'):
-                has_negative = (m2 < 0).any()
-            else:
-                # For other iterable types
-                try:
-                    has_negative = any(m2 < 0)
-                except TypeError:
-                    # Not iterable
-                    has_negative = False
-            
-        if has_negative:
-            warnings.warn("Negative m² values encountered. Taking absolute values, but this may indicate unphysical particles or numerical issues.")
-            m2 = backend_where(m2 < 0, abs(m2), m2, lib)
-    
-    m = backend_sqrt(m2, lib)
-    
-    # Convert to scalar only if all inputs were scalars
-    if isinstance(E, (float, int)) and isinstance(p, (float, int)):
-        return float(m)
-    return m
-
+    # Fall back to original implementation
+    return _compute_mass_original(E, p, lib)
 
 def compute_eta(p, pz, lib):
     """
@@ -270,14 +352,12 @@ def compute_eta(p, pz, lib):
     scalar or array-like
         Pseudorapidity with the same type as input
     """
-    epsilon = 1e-10
-    eta = 0.5 * backend_log((p + pz) / (p - pz + epsilon), lib)
+    # Use JIT version if available and applicable
+    if HAS_JIT and lib == 'np':
+        return jit_compute_eta(p, pz, lib)
     
-    # Convert to scalar only if all inputs were scalars
-    if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
-        return float(eta)
-    return eta
-
+    # Fall back to original implementation
+    return _compute_eta_original(p, pz, lib)
 
 def compute_phi(px, py, lib):
     """
@@ -295,12 +375,12 @@ def compute_phi(px, py, lib):
     scalar or array-like
         Azimuthal angle with the same type as input
     """
-    phi = backend_atan2(py, px, lib)
+    # Use JIT version if available and applicable
+    if HAS_JIT and lib == 'np':
+        return jit_compute_phi(px, py, lib)
     
-    # Convert to scalar only if all inputs were scalars
-    if isinstance(px, (float, int)) and isinstance(py, (float, int)):
-        return float(phi)
-    return phi
+    # Fall back to original implementation
+    return _compute_phi_original(px, py, lib)
 
 def compute_p4_from_ptepm(pt, eta, phi, m, lib):
     """
@@ -324,12 +404,9 @@ def compute_p4_from_ptepm(pt, eta, phi, m, lib):
     tuple
         (px, py, pz, E) with the same type as input
     """
-    px = pt * backend_cos(phi, lib)
-    py = pt * backend_sin(phi, lib)
-    pz = pt * backend_sinh(eta, lib)
-    E = backend_sqrt(pt*pt * backend_cosh(eta, lib)**2 + m*m, lib)
+    # Use JIT version if available and applicable
+    if HAS_JIT and lib == 'np':
+        return jit_compute_p4_from_ptepm(pt, eta, phi, m, lib)
     
-    # Convert to scalar only if all inputs were scalars
-    if all(isinstance(x, (float, int)) for x in [pt, eta, phi, m]):
-        return float(px), float(py), float(pz), float(E)
-    return px, py, pz, E
+    # Fall back to original implementation
+    return _compute_p4_from_ptepm_original(pt, eta, phi, m, lib)

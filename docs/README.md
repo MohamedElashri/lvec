@@ -9,6 +9,7 @@
 7. [Advanced Usage](#advanced-usage)
 8. [Performance Considerations](#performance-considerations)
 9. [Reference Frames](#reference-frames)
+10. [JIT Acceleration](#jit-acceleration)
 
 ## Overview
 
@@ -18,6 +19,7 @@ LVec is a Python package designed for High Energy Physics (HEP) analysis, provid
 - Python 3.10+ (due to numpy requirement)
 - NumPy (required)
 - Awkward Array (optional, for Awkward array support)
+- Numba (optional, for JIT acceleration)
 
 ## Installation
 
@@ -831,6 +833,75 @@ with uproot.recreate("output.root") as f:
    selected = vectors[mask]
    ```
 
+## JIT Acceleration
+
+LVec provides JIT (Just-In-Time) compilation support to accelerate computationally intensive operations, particularly when working with large arrays of particles.
+
+### How JIT Acceleration Works
+
+The JIT acceleration feature in LVec uses `Numba` to compile critical parts of the code directly to optimized machine code. This provides significant performance improvements for operations like calculating masses and transverse momentum.
+
+JIT acceleration is fully compatible with the caching system, providing optimal performance through both compilation and caching of results:
+1. First calculation: JIT-accelerated computation → cached result
+2. Subsequent calculations: Retrieved from cache (fastest)
+
+### Using JIT Acceleration
+
+```python
+from lvec import LVec, is_jit_available, enable_jit
+import numpy as np
+
+# Check if JIT is available (requires numba)
+if is_jit_available():
+    print("JIT acceleration enabled")
+else:
+    print("JIT acceleration not available, install numba for better performance")
+    
+# Create vectors (JIT is automatically used if available)
+px = np.random.normal(0, 10, 1_000_000)  # Large array is better JIT benefit
+py = np.random.normal(0, 10, 1_000_000)
+pz = np.random.normal(0, 10, 1_000_000)
+E = np.sqrt(px**2 + py**2 + pz**2 + 0.14**2)  # pion mass ~ 0.14 GeV
+
+vectors = LVec(px, py, pz, E)
+
+# Perform calculations (automatically JIT-accelerated if available)
+mass = vectors.mass  # JIT accelerated
+pt = vectors.pt      # JIT accelerated
+
+# Disable JIT if needed (for debugging or testing)
+enable_jit(False)
+```
+
+### JIT Configuration
+
+- **Global enabling/disabling**: Use `enable_jit(True/False)` to control JIT compilation globally
+- **Availability check**: Use `is_jit_available()` to check if JIT is available (requires numba package)
+- **Automatic fallback**: If numba is not installed or JIT is disabled, the code automatically falls back to standard implementations
+
+### Supported Operations
+
+The following operations benefit from JIT acceleration:
+
+| Operation | Description | Typical Speedup |
+|-----------|-------------|----------------|
+| `pt`      | Transverse momentum | 2-3x |
+| `p`       | Total momentum | 2-3x |
+| `mass`    | Invariant mass | 1.5-3x |
+| `eta`     | Pseudorapidity | 1.5-2x |
+| `phi`     | Azimuthal angle | 1-1.5x |
+| Constructors | Creation from pt,eta,phi,m | 1.5-2x |
+
+Note: Speedup factors depend on array size, hardware, and specific operation. JIT works best with large NumPy arrays.
+
+### Best Practices
+
+1. **Use larger arrays**: JIT compilation has overhead, so benefits increase with larger dataset sizes
+2. **Batch operations**: Apply operations to full arrays, not in Python loops
+3. **NumPy vs Awkward**: JIT acceleration works with NumPy arrays, while Awkward arrays use standard implementations
+4. **First-run overhead**: First execution includes compilation time; subsequent runs are much faster
+5. **JIT+Cache synergy**: Use both for optimal performance - JIT for fast computation, caching for reuse
+
 ## Reference Frames
 
 The `Frame` class provides a powerful abstraction for handling reference frame transformations in relativistic calculations.
@@ -892,4 +963,3 @@ In the center-of-mass frame, the total momentum should be zero:
 total_p_cm = sum(p.to_frame(cm_frame) for p in particles)
 print(f"Total momentum in CM: ({total_p_cm.px}, {total_p_cm.py}, {total_p_cm.pz})")
 # Should be very close to (0, 0, 0)
-```

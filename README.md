@@ -5,7 +5,7 @@
 [![PyPI version](https://badge.fury.io/py/lvec.svg)](https://badge.fury.io/py/lvec)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-> ⚠️ This project is a work in progress
+>  This project is a work in progress
 
 A Python package for seamless handling of Lorentz vectors, 2D vectors, and 3D vectors in HEP analysis, bridging the gap between Scikit-HEP and ROOT ecosystems.
 
@@ -17,6 +17,11 @@ LVec aims to simplify HEP analysis by providing a unified interface for working 
 
 ```bash
 pip install lvec
+```
+
+For JIT acceleration support (recommended):
+```bash
+pip install lvec numba
 ```
 
 For development installation:
@@ -62,6 +67,30 @@ v.set_ttl('pt', 10)  # 10 second TTL for transverse momentum
 # Get cache statistics
 stats = v.cache_stats
 print(f"Cache hit ratio: {v.cache_hit_ratio}")
+```
+
+### JIT Acceleration
+```python
+from lvec import LVec, is_jit_available, enable_jit
+import numpy as np
+
+# Check if JIT is available (requires numba)
+print(f"JIT acceleration available: {is_jit_available()}")
+
+# Create a large array of particles
+px = np.random.normal(0, 10, 1_000_000)
+py = np.random.normal(0, 10, 1_000_000)
+pz = np.random.normal(0, 10, 1_000_000)
+E = np.sqrt(px**2 + py**2 + pz**2 + 0.14**2)  # pion mass ~ 0.14 GeV
+
+# Process with JIT enabled (default if numba is installed)
+vectors = LVec(px, py, pz, E)
+_ = vectors.pt  # JIT-accelerated calculation
+_ = vectors.mass  # JIT-accelerated calculation
+
+# Disable JIT for debugging
+enable_jit(False)
+_ = vectors.pt  # Now uses non-JIT implementation
 ```
 
 ### Reference Frames
@@ -202,6 +231,7 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 - Python >= 3.10
 - NumPy >= 1.20.0
 - Awkward >= 2.0.0
+- Numba (optional, for JIT acceleration)
 
 For development:
 - pytest >= 7.0.0

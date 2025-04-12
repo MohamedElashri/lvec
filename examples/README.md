@@ -6,11 +6,15 @@ This directory contains example scripts demonstrating how to use the LVec packag
 Make sure you have LVec installed along with its dependencies:
 ```bash
 pip install lvec
-pip install uproot numpy awkward
+```
+
+For JIT acceleration examples:
+```bash
+pip install numba
 ```
 
 ## Data Sample
-The examples use a simulated Z→μμ decay sample. To generate the sample:
+The examples use a simulated Z decay sample. To generate the sample:
 
 ```bash
 python create_test_data.py
@@ -18,8 +22,8 @@ python create_test_data.py
 
 This will create `samples/physics_data.root` containing:
 - Mother particle (Z boson): px, py, pz, E
-- Daughter 1 (μ⁺): px, py, pz, E
-- Daughter 2 (μ⁻): px, py, pz, E
+- Daughter 1 (+): px, py, pz, E
+- Daughter 2 (): px, py, pz, E
 
 ## Available Examples
 
@@ -108,7 +112,7 @@ Shows how to:
 
 ### 8. LHCb Analysis (`08_lhcb_data.py`)
 Demonstrates how to:
-- Work with real LHCb open data (B→hhh decay)
+- Work with real LHCb open data (Bhhh decay)
 - Calculate two-body invariant masses
 - Create publication-quality plots with LHCb style
 - Handle multiple particle combinations
@@ -131,7 +135,7 @@ pip install uproot matplotlib
 Uses LHCb open data from:
 - Dataset: B2HHH_MagnetDown.root (just a sample)
 - Source: [CERN Open Data](https://opendata.cern.ch/record/4900)
-- Description: B→hhh decay data collected by LHCb in 2011 at √s = 7 TeV
+- Description: Bhhh decay data collected by LHCb in 2011 at s = 7 TeV
 
 #### Running the Example
 ```bash
@@ -176,19 +180,94 @@ total_cm = p1_cm + p2_cm
 print(f"Total momentum in CM: px={total_cm.px:.6f}, py={total_cm.py:.6f}, pz={total_cm.pz:.6f}")
 ```
 
-Sample output:
+### 11. Cache Optimization Demo (`11_cache_optimization_demo.py`)
+Demonstrates advanced cache optimization features:
+- Setting Time-To-Live (TTL) for cached properties
+- Configuring LRU (Least Recently Used) eviction policies
+- Monitoring cache performance
+
+```python
+# Configure cache with size limit and TTL
+vector = LVec(px, py, pz, E, max_cache_size=100, default_ttl=60)
+
+# Check cache size and clear expired entries
+print(f"Cache size: {vector.cache_size}")
+expired_count = vector.clear_expired()
 ```
-=== Particles in center-of-mass frame ===
-Particle 1: px=0.000000, py=0.000000, pz=17.329527, E=22.919697, mass=15.000000
-Particle 2: px=0.000000, py=0.000000, pz=-17.329527, E=21.801663, mass=13.228757
 
-Total momentum in CM: px=0.000000, py=0.000000, pz=0.000000
-Total energy in CM: E=44.721360
-Invariant mass in CM: √s=44.721360
+### 12. JIT Acceleration (`12_jit_acceleration.py`)
+Demonstrates how to use JIT (Just-In-Time) compilation to speed up calculations:
+```python
+from lvec import LVec, is_jit_available, enable_jit
+import numpy as np
+
+# Check if JIT is available
+print(f"JIT available: {is_jit_available()}")
+
+# Create particle vectors with JIT acceleration
+px = np.random.normal(0, 10, 10_000_000)  # Large dataset for better JIT benefit
+py = np.random.normal(0, 10, 10_000_000)
+pz = np.random.normal(0, 10, 10_000_000)
+E = np.sqrt(px**2 + py**2 + pz**2 + 0.14**2)  # pion mass ~ 0.14 GeV
+
+vectors = LVec(px, py, pz, E)  # JIT-enabled by default
+
+# Access properties (JIT-accelerated)
+pt = vectors.pt
+mass = vectors.mass
+
+# Disable JIT for debugging or comparison
+enable_jit(False)
 ```
 
+#### Running the Example
+```bash
+python 12_jit_acceleration.py
+```
 
+This will:
+1. Check if JIT acceleration is available (requires numba)
+2. Run a series of benchmarks comparing JIT and non-JIT performance
+3. Generate performance visualization plots
+4. Demonstrate how JIT works with the caching system
 
+#### Sample Output
+```
+=== JIT Performance Benchmark ===
+Creating test dataset with 10,000,000 particles...
+
+Running benchmark with JIT enabled...
+  Vector creation: 0.0049 seconds
+  First run (cold): 0.7907 seconds  # Includes JIT compilation time
+  Second run (cold): 0.4795 seconds
+  Third run (warm): 0.0886 seconds
+
+Running benchmark with JIT disabled...
+  First run (cold): 0.5160 seconds
+  Second run (cold): 0.5197 seconds
+  Third run (warm): 0.0911 seconds
+
+=== JIT Performance Across Different Operations ===
+Running operation benchmarks with JIT enabled...
+  pt   : 0.000514 seconds
+  eta  : 0.003842 seconds
+  phi  : 0.013952 seconds
+  mass : 0.003011 seconds
+  p    : 0.000760 seconds
+
+Running operation benchmarks with JIT disabled...
+  pt   : 0.001242 seconds (2.4x slower)
+  eta  : 0.006445 seconds (1.7x slower)
+  phi  : 0.013638 seconds (1.0x slower)
+  mass : 0.003630 seconds (1.2x slower)
+  p    : 0.001861 seconds (2.5x slower)
+```
+
+#### Dependencies
+Required for this example:
+```bash
+pip install numba matplotlib
+```
 ## Running the Examples
 
 Run each example individually:
@@ -200,6 +279,8 @@ python 04_boost_frame.py
 python 08_lhcb_data.py
 python 09_cache_performance.py
 python 10_reference_frames.py
+python 11_cache_optimization_demo.py
+python 12_jit_acceleration.py
 ```
 
 ## Expected Output
@@ -219,7 +300,7 @@ Original mass: 91.20 GeV
 Reconstructed mass: 0.22 GeV
 Mass resolution: 0.017 GeV
 
-Average ΔR between daughters: 0.000
+Average R between daughters: 0.000
 ```
 
 ### Physics Selections
@@ -229,8 +310,8 @@ Total events: 1000
 Selected events: 625
 
 Selected Z properties:
-Mass mean: 0.22 ± 0.02 GeV
-pT mean: 75.25 ± 15.55 GeV
+Mass mean: 0.22  0.02 GeV
+pT mean: 75.25  15.55 GeV
 ```
 
 ### Reference Frames
@@ -255,7 +336,7 @@ Azimuthal angle (phi): [1.32581766 1.19028995 1.10714872]
 
 Vector Operations:
 v1 + v2: ([6. 8.], [10. 12.])
-v1 · v2 (dot product): [26. 44.]
+v1  v2 (dot product): [26. 44.]
 
 === 2D Vector Operations with Awkward Backend ===
 
@@ -265,7 +346,7 @@ Azimuthal angle (phi): [1.33, 1.19, 1.11]
 
 Vector Operations:
 v1 + v2: ([6, 8], [10, 12])
-v1 · v2 (dot product): [26, 44]
+v1  v2 (dot product): [26, 44]
 ```
 
 ### 3D Vectors
@@ -281,8 +362,8 @@ Polar angle (theta): [0.5323032  0.59247462 0.64052231]
 
 Vector Operations:
 v1 + v2: ([ 8. 10.], [12. 14.], [16. 18.])
-v1 · v2 (dot product): [ 89. 128.]
-v1 × v2 (cross product): ([-12. -12.], [24. 24.], [-12. -12.])
+v1  v2 (dot product): [ 89. 128.]
+v1  v2 (cross product): ([-12. -12.], [24. 24.], [-12. -12.])
 
 === 3D Vector Operations with Awkward Backend ===
 
@@ -294,8 +375,8 @@ Polar angle (theta): [0.532, 0.592, 0.641]
 
 Vector Operations:
 v1 + v2: ([8, 10], [12, 14], [16, 18])
-v1 · v2 (dot product): [89, 128]
-v1 × v2 (cross product): ([-12, -12], [24, 24], [-12, -12])
+v1  v2 (dot product): [89, 128]
+v1  v2 (cross product): ([-12, -12], [24, 24], [-12, -12])
 ```
 
 ### LHCb Analysis
