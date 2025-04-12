@@ -6,7 +6,11 @@ This module provides an optimized caching system that:
 2. Caches intermediate calculations for reuse across multiple properties
 3. Uses a dependency graph for efficient lazy evaluation
 4. Provides instrumentation to track cache hit ratios and performance metrics
+5. Implements memory optimization with LRU eviction and TTL support
 """
+
+import time
+from collections import OrderedDict
 
 class PropertyCache:
     """
@@ -23,10 +27,19 @@ class PropertyCache:
         _value_version: Dictionary tracking the version of each cached value
         _hits: Dictionary tracking number of cache hits per property
         _misses: Dictionary tracking number of cache misses per property
+        _max_size: Maximum number of entries in the cache
+        _lru_order: OrderedDict tracking usage order for LRU eviction
+        _expiry_times: Dictionary tracking expiration time for cached values
     """
     
-    def __init__(self):
-        """Initialize the caching system."""
+    def __init__(self, max_size=None, default_ttl=None):
+        """
+        Initialize the caching system.
+        
+        Args:
+            max_size: Maximum number of entries in the cache (None for unlimited)
+            default_ttl: Default time-to-live for cached values in seconds (None for no expiration)
+        """
         # Cache of computed values (both properties and intermediate results)
         self._values = {}
         
@@ -46,6 +59,12 @@ class PropertyCache:
         self._hits = {}
         self._misses = {}
         self._enabled = True
+        
+        # Memory optimization attributes
+        self._max_size = max_size
+        self._default_ttl = default_ttl
+        self._lru_order = OrderedDict()
+        self._expiry_times = {}
 
     def register_dependency(self, prop, dependencies):
         """
@@ -86,13 +105,80 @@ class PropertyCache:
             for prop in affected_props:
                 if prop in self._values:
                     del self._values[prop]
+                    if prop in self._lru_order:
+                        del self._lru_order[prop]
+                    if prop in self._expiry_times:
+                        del self._expiry_times[prop]
                     
             # Also remove intermediate results that depend on this component
             for key in list(self._values.keys()):
                 if key.endswith('_squared') and key.startswith(component):
                     del self._values[key]
+                    if key in self._lru_order:
+                        del self._lru_order[key]
+                    if key in self._expiry_times:
+                        del self._expiry_times[key]
     
-    def get_cached(self, key, compute_func, dependencies=None):
+    def _update_lru(self, key):
+        """
+        Update the LRU tracking for a key.
+        
+        Args:
+            key: The key that was accessed
+        """
+        if key in self._lru_order:
+            del self._lru_order[key]
+        self._lru_order[key] = None  # Value doesn't matter, just using OrderedDict for ordering
+        
+        # Enforce max cache size if needed
+        if self._max_size is not None and len(self._values) > self._max_size:
+            while len(self._values) > self._max_size:
+                # Get the least recently used key (first item in OrderedDict)
+                lru_key, _ = next(iter(self._lru_order.items()))
+                
+                # Remove from cache
+                if lru_key in self._values:
+                    del self._values[lru_key]
+                if lru_key in self._value_version:
+                    del self._value_version[lru_key]
+                if lru_key in self._expiry_times:
+                    del self._expiry_times[lru_key]
+                
+                # Remove from LRU tracking
+                del self._lru_order[lru_key]
+    
+    def _is_expired(self, key):
+        """
+        Check if a cached value has expired.
+        
+        Args:
+            key: The key to check for expiration
+            
+        Returns:
+            bool: True if the value has expired, False otherwise
+        """
+        if key in self._expiry_times:
+            return time.time() > self._expiry_times[key]
+        return False
+    
+    def set_ttl(self, key, ttl_seconds):
+        """
+        Set or update the expiration time for a specific cached value.
+        
+        Args:
+            key: The key to set expiration for
+            ttl_seconds: Time-to-live in seconds (None for no expiration)
+        """
+        if key in self._values:
+            if ttl_seconds is None:
+                # Remove expiration if it exists
+                if key in self._expiry_times:
+                    del self._expiry_times[key]
+            else:
+                # Set expiration time
+                self._expiry_times[key] = time.time() + ttl_seconds
+    
+    def get_cached(self, key, compute_func, dependencies=None, ttl=None):
         """
         Get a cached value if valid, otherwise compute and cache it.
         
@@ -100,6 +186,7 @@ class PropertyCache:
             key: The key for the cached value
             compute_func: Function to compute the value if not cached
             dependencies: List of components this value depends on (for new dependencies)
+            ttl: Time-to-live in seconds for this specific value (overrides default)
             
         Returns:
             The cached or freshly computed value
@@ -113,6 +200,9 @@ class PropertyCache:
         
         # If the value hasn't been computed yet
         if key not in self._values:
+            needs_recompute = True
+        # If the value has expired
+        elif self._is_expired(key):
             needs_recompute = True
         # If any dependency has changed since the last computation
         elif key in self._dependencies:
@@ -130,6 +220,7 @@ class PropertyCache:
                 self._misses[key] += 1
                 
             self._values[key] = compute_func()
+            
             # Update the value's version to the latest component version
             max_version = 0
             if key in self._dependencies:
@@ -137,20 +228,32 @@ class PropertyCache:
                     if dep in self._comp_version:
                         max_version = max(max_version, self._comp_version[dep])
             self._value_version[key] = max_version
+            
+            # Set expiration time if TTL is provided
+            ttl_to_use = ttl if ttl is not None else self._default_ttl
+            if ttl_to_use is not None:
+                self._expiry_times[key] = time.time() + ttl_to_use
+                
+            # Update LRU tracking
+            self._update_lru(key)
         else:
             # Record cache hit for instrumentation
             if self._enabled and key in self._hits:
                 self._hits[key] += 1
+            
+            # Update LRU tracking (accessed an existing item)
+            self._update_lru(key)
         
         return self._values[key]
     
-    def get_intermediate(self, key, compute_func):
+    def get_intermediate(self, key, compute_func, ttl=None):
         """
         Get or compute an intermediate result that can be reused by multiple properties.
         
         Args:
             key: The key for the intermediate result (e.g., 'px_squared')
             compute_func: Function to compute the intermediate result
+            ttl: Time-to-live in seconds for this specific value (overrides default)
             
         Returns:
             The intermediate result
@@ -161,17 +264,30 @@ class PropertyCache:
             self._misses[key] = 0
             
         # Check if the intermediate result is already cached
-        is_cached = key in self._values
+        is_cached = key in self._values and not self._is_expired(key)
         
         # Intermediate results are handled similarly to properties but aren't 
         # part of the dependency graph
         if not is_cached:
             if self._enabled:
                 self._misses[key] += 1
+            
+            # Compute and cache the value
             self._values[key] = compute_func()
+            
+            # Set expiration time if TTL is provided
+            ttl_to_use = ttl if ttl is not None else self._default_ttl
+            if ttl_to_use is not None:
+                self._expiry_times[key] = time.time() + ttl_to_use
+                
+            # Update LRU tracking
+            self._update_lru(key)
         else:
             if self._enabled:
                 self._hits[key] += 1
+                
+            # Update LRU tracking (accessed an existing item)
+            self._update_lru(key)
                 
         return self._values[key]
     
@@ -179,6 +295,8 @@ class PropertyCache:
         """Clear all cached values but retain the dependency information."""
         self._values.clear()
         self._value_version.clear()
+        self._lru_order.clear()
+        self._expiry_times.clear()
     
     def clear_property(self, prop):
         """
@@ -191,6 +309,30 @@ class PropertyCache:
             del self._values[prop]
         if prop in self._value_version:
             del self._value_version[prop]
+        if prop in self._lru_order:
+            del self._lru_order[prop]
+        if prop in self._expiry_times:
+            del self._expiry_times[prop]
+            
+    def clear_expired(self):
+        """
+        Remove all expired values from the cache.
+        
+        Returns:
+            int: Number of expired items removed
+        """
+        expired_keys = [key for key in self._expiry_times if time.time() > self._expiry_times[key]]
+        
+        for key in expired_keys:
+            if key in self._values:
+                del self._values[key]
+            if key in self._value_version:
+                del self._value_version[key]
+            if key in self._lru_order:
+                del self._lru_order[key]
+            del self._expiry_times[key]
+            
+        return len(expired_keys)
             
     def get_affected_properties(self, components):
         """
@@ -262,7 +404,10 @@ class PropertyCache:
                 "hits": sum(self._hits.values()),
                 "misses": sum(self._misses.values()),
                 "total": sum(self._hits.values()) + sum(self._misses.values()),
-                "hit_ratio": self.get_hit_ratio()
+                "hit_ratio": self.get_hit_ratio(),
+                "cache_size": len(self._values),
+                "max_size": self._max_size,
+                "expired_keys": len([k for k in self._expiry_times if self._is_expired(k)])
             },
             "properties": {}
         }
@@ -278,7 +423,12 @@ class PropertyCache:
                 "hits": hits,
                 "misses": misses,
                 "total": total,
-                "hit_ratio": hit_ratio
+                "hit_ratio": hit_ratio,
+                "ttl": (self._expiry_times.get(key, None) - time.time()) if key in self._expiry_times else None
             }
             
         return stats
+    
+    def __len__(self):
+        """Return the number of items in the cache."""
+        return len(self._values)
