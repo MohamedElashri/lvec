@@ -12,7 +12,9 @@ import numpy as np
 
 # Import JIT functions if available
 try:
-    from .jit import jit_compute_mass, is_jit_available
+    from .jit import (jit_compute_pt, jit_compute_p, jit_compute_mass,
+                     jit_compute_eta, jit_compute_phi, jit_compute_p4_from_ptepm,
+                     is_jit_available)
     HAS_JIT = True
 except ImportError:
     HAS_JIT = False
@@ -88,7 +90,13 @@ class LVec:
         """Create from pt, eta, phi, mass."""
         # First convert to arrays and get the lib type
         pt, eta, phi, m, lib = ensure_array(pt, eta, phi, m)
-        px, py, pz, E = compute_p4_from_ptepm(pt, eta, phi, m, lib)
+        
+        # Use JIT if available for NumPy arrays
+        if lib == 'np' and HAS_JIT and is_jit_available() and not isinstance(pt, (float, int)):
+            px, py, pz, E = jit_compute_p4_from_ptepm(pt, eta, phi, m, lib)
+        else:
+            px, py, pz, E = compute_p4_from_ptepm(pt, eta, phi, m, lib)
+            
         return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl)
     
     @classmethod
@@ -222,14 +230,22 @@ class LVec:
     def pt(self):
         """Transverse momentum."""
         def _compute_pt():
-            return compute_pt(self._px, self._py, self._lib)
+            # Use JIT-optimized function when available for NumPy arrays
+            if HAS_JIT and self._lib == 'np' and is_jit_available():
+                return jit_compute_pt(self._px, self._py, self._lib)
+            else:
+                return compute_pt(self._px, self._py, self._lib)
         return self._get_cached('pt', _compute_pt)
         
     @property
     def p(self):
         """Magnitude of the 3-momentum."""
         def _compute_p():
-            return compute_p(self._px, self._py, self._pz, self._lib)
+            # Use JIT-optimized function when available for NumPy arrays
+            if HAS_JIT and self._lib == 'np' and is_jit_available():
+                return jit_compute_p(self._px, self._py, self._pz, self._lib)
+            else:
+                return compute_p(self._px, self._py, self._pz, self._lib)
         return self._get_cached('p', _compute_p)
     
     @property
@@ -251,15 +267,24 @@ class LVec:
     def phi(self):
         """Azimuthal angle in radians."""
         def _compute_phi():
-            return compute_phi(self._px, self._py, self._lib)
+            # Use JIT-optimized function when available for NumPy arrays
+            if HAS_JIT and self._lib == 'np' and is_jit_available():
+                return jit_compute_phi(self._px, self._py, self._lib)
+            else:
+                return compute_phi(self._px, self._py, self._lib)
         return self._get_cached('phi', _compute_phi)
     
     @property
     def eta(self):
         """Pseudorapidity."""
         def _compute_eta():
-            p = self.p  # Use cached value
-            return compute_eta(p, self._pz, self._lib)
+            # Use JIT-optimized function when available for NumPy arrays
+            if HAS_JIT and self._lib == 'np' and is_jit_available():
+                p = self.p  # Use cached value
+                return jit_compute_eta(p, self._pz, self._lib)
+            else:
+                p = self.p  # Use cached value
+                return compute_eta(p, self._pz, self._lib)
         return self._get_cached('eta', _compute_eta)
     
     def __add__(self, other):
