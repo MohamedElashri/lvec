@@ -10,6 +10,12 @@ from .caching import PropertyCache
 from .frame import Frame
 import numpy as np
 
+# Import JIT functions if available
+try:
+    from .jit import jit_compute_mass, is_jit_available
+    HAS_JIT = True
+except ImportError:
+    HAS_JIT = False
 
 class LVec:
     """
@@ -215,109 +221,46 @@ class LVec:
     @property
     def pt(self):
         """Transverse momentum."""
-        return self._get_cached('pt', 
-                             lambda: backend_sqrt(self._pt_squared(), self._lib),
-                             ['px', 'py'])
-    
+        def _compute_pt():
+            return compute_pt(self._px, self._py, self._lib)
+        return self._get_cached('pt', _compute_pt)
+        
     @property
     def p(self):
-        """Total momentum magnitude."""
-        return self._get_cached('p', 
-                             lambda: backend_sqrt(self._p_squared(), self._lib),
-                             ['px', 'py', 'pz'])
+        """Magnitude of the 3-momentum."""
+        def _compute_p():
+            return compute_p(self._px, self._py, self._pz, self._lib)
+        return self._get_cached('p', _compute_p)
     
     @property
     def mass(self):
-        """Invariant mass."""
-        def calc_mass():
-            # E² - p² calculation optimized with intermediate results
-            E_squared = self._E**2
-            p_squared = self._p_squared()
-            m_squared = E_squared - p_squared
-            
-            # Handle numerical precision issues (for physical particles, m² should be ≥ 0)
-            if isinstance(m_squared, (float, int)):
-                if m_squared < 0:
-                    if abs(m_squared) < 1e-10:  # Small tolerance for numerical precision
-                        m_squared = 0
-                    # Large negative values are a problem
-                    elif m_squared < -1e-6:
-                        import warnings
-                        warnings.warn(f"Mass calculation resulted in negative m²={m_squared}")
-                        m_squared = abs(m_squared)
+        """Invariant mass of the Lorentz vector."""
+        def _compute_mass():
+            # Use direct JIT-optimized mass calculation when available
+            # This avoids unnecessary intermediate calculations
+            if HAS_JIT and self._lib == 'np' and is_jit_available():
+                return jit_compute_mass(self._E, self._px, self._py, self._pz, self._lib)
             else:
-                # Array case
-                if self._lib == 'np':
-                    if (m_squared < 0).any():
-                        # Check for numerically significant negative values
-                        problematic = (m_squared < -1e-6)
-                        if problematic.any():
-                            import warnings
-                            warnings.warn("Mass calculation resulted in negative m² values")
-                        # Take absolute value to ensure physical result
-                        m_squared = np.where(m_squared < 0, abs(m_squared), m_squared)
-                elif self._lib == 'ak':
-                    import awkward as ak
-                    if ak.any(m_squared < 0):
-                        problematic = (m_squared < -1e-6)
-                        if ak.any(problematic):
-                            import warnings
-                            warnings.warn("Mass calculation resulted in negative m² values")
-                        # Take absolute value with the appropriate backend
-                        m_squared = ak.where(m_squared < 0, abs(m_squared), m_squared)
+                # Fall back to the standard computation
+                p = self.p  # This uses the cached p value
+                return compute_mass(self._E, p, self._lib)
             
-            return backend_sqrt(m_squared, self._lib)
-        
-        return self._get_cached('mass', calc_mass, ['px', 'py', 'pz', 'E'])
+        return self._get_cached('mass', _compute_mass)
     
     @property
     def phi(self):
-        """Azimuthal angle."""
-        return self._get_cached('phi',
-                             lambda: backend_atan2(self._py, self._px, self._lib),
-                             ['px', 'py'])
+        """Azimuthal angle in radians."""
+        def _compute_phi():
+            return compute_phi(self._px, self._py, self._lib)
+        return self._get_cached('phi', _compute_phi)
     
     @property
     def eta(self):
         """Pseudorapidity."""
-        def calc_eta():
-            p = self.p  # This will use our cached property
-            pz = self._pz
-            # Use a small epsilon to avoid division by zero
-            epsilon = 1e-10
-            
-            if self._lib == 'np':
-                # For NumPy, handle scalar and array cases
-                if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
-                    if abs(p - abs(pz)) < epsilon:
-                        # When p ≈ |pz|, the particle is along the beam axis
-                        return float('inf') if pz >= 0 else float('-inf')
-                    # Numerically stable formula for eta
-                    return 0.5 * np.log((p + pz) / (p - pz))
-                else:
-                    # Array case with mask for special values
-                    near_beam = (abs(p - abs(pz)) < epsilon)
-                    # First compute the standard formula
-                    result = 0.5 * np.log((p + pz) / (p - pz + epsilon))
-                    # Then correct special cases (if any)
-                    if near_beam.any():
-                        result = np.where(near_beam & (pz >= 0), np.inf, result)
-                        result = np.where(near_beam & (pz < 0), -np.inf, result)
-                    return result
-            else:
-                # For Awkward arrays
-                import awkward as ak
-                # Define a small epsilon to avoid division by zero
-                near_beam = (abs(p - abs(pz)) < epsilon)
-                # Compute the standard formula
-                result = 0.5 * backend_log((p + pz) / (p - pz + epsilon), self._lib)
-                # Correct special cases
-                if ak.any(near_beam):
-                    result = ak.where(near_beam & (pz >= 0), np.inf, result)
-                    result = ak.where(near_beam & (pz < 0), -np.inf, result)
-                return result
-                
-        return self._get_cached('eta', calc_eta, ['px', 'py', 'pz'])
+        def _compute_eta():
+            p = self.p  # Use cached value
+            return compute_eta(p, self._pz, self._lib)
+        return self._get_cached('eta', _compute_eta)
     
     def __add__(self, other):
         """Add two Lorentz vectors."""

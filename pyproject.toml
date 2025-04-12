@@ -30,6 +30,14 @@ dev = [
     "pytest>=7.0.0",
     "uproot>=5.0.0",
 ]
+performance = [
+    "numba>=0.61.2",
+]
+all = [
+    "numba>=0.61.2",
+    "pytest>=7.0.0",
+    "uproot>=5.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/MohamedElashri/lvec"
