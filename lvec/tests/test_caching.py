@@ -2,7 +2,7 @@ import pytest
 
 from lvec import LVec, ShapeError
 import numpy as np
-import awkward as ak
+ak = pytest.importorskip("awkward")
 
 def test_caching():
     v = LVec(1.0, 1.0, 1.0, 2.0)

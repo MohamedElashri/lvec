@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-import awkward as ak
+ak = pytest.importorskip("awkward")
 from lvec import LVec
 from lvec.exceptions import ShapeError, InputError, BackendError, DependencyError
 
@@ -39,14 +39,14 @@ def test_input_validation():
     """Test input value validation"""
     # Test negative energy
     with pytest.raises(InputError) as excinfo:
-        LVec(1.0, 1.0, 1.0, -1.0)
-    assert "Energy must be non-negative" in str(excinfo.value)
+        LVec(1.0, 1.0, 1.0, -1.0, validate=True)
+    assert "energy must be non-negative" in str(excinfo.value)
 
     # Test array with negative energy
     with pytest.raises(InputError) as excinfo:
         LVec(np.array([1.0]), np.array([1.0]), 
-             np.array([1.0]), np.array([-1.0]))
-    assert "energy values must be non-negative" in str(excinfo.value)
+             np.array([1.0]), np.array([-1.0]), validate=True)
+    assert "energy must be non-negative" in str(excinfo.value)
 
 def test_boost_validation():
     """Test boost operation validation"""
