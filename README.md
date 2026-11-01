@@ -46,6 +46,9 @@ precision recovery.
 The [user guide](https://github.com/MohamedElashri/lvec/blob/main/user-guide.md) covers the full API, NumPy and Awkward workflows,
 physics conventions, cache controls, numerical accuracy, examples, and benchmarks.
 
+The [benchmark framework](benchmarks/README.md) documents reproducible runs,
+LVec performance and memory results, and optional comparisons with `vector`.
+
 For development, install a checkout with `pip install -e ".[dev]"` and run
 `python -m pytest -W error::RuntimeWarning`.
 
