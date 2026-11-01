@@ -837,7 +837,7 @@ index individual events in Python.
 Run the lightweight benchmark with the environment you intend to use:
 
 ```bash
-python benchmarks/benchmark_core.py --sizes 1000 1000000 --jagged-events 10000
+PYTHONPATH=. python benchmarks/benchmark_core.py --sizes 1000 1000000 --jagged-events 10000
 ```
 
 It prints JSON containing versions, seeded workload parameters, median timings
