@@ -212,3 +212,10 @@ def own_components(*components):
             raise TypeError("Vector components must be real numeric scalars or arrays")
         owned.append(freeze_array(result))
     return tuple(owned)
+
+
+def normalize_scalar(value):
+    """Normalize real NumPy scalar types without discarding imaginary parts."""
+    if isinstance(value, (complex, np.complexfloating)):
+        raise TypeError("Vector components must be real-valued")
+    return float(value) if isinstance(value, np.number) else value
