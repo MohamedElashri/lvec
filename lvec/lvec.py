@@ -1,7 +1,7 @@
 # lvec.py
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_sin, backend_cos, backend_atan2,
-                        backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components)
+                        backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, freeze_array, normalize_scalar)
 from .utils import ensure_array, check_shapes, compute_p4_from_ptepm
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
@@ -39,17 +39,42 @@ class LVec:
             InputError: If any input has invalid values
             BackendError: If there's an issue with the backend operations
         """
+        self._initialize_components(px, py, pz, E)
+        self._initialize_cache(max_cache_size, default_ttl,
+                               cache_intermediates=cache_intermediates,
+                               cache_stats=cache_stats)
+        if validate:
+            self.validate_particle()
+
+    def _initialize_components(self, px, py, pz, E, *, trusted=False):
+        """Normalize components; only internal results may bypass snapshots."""
         self._lib = 'unknown'
         try:
-            self._px, self._py, self._pz, self._E, self._lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (px, py, pz, E)))
+            self._px, self._py, self._pz, self._E, self._lib = ensure_array(*(normalize_scalar(x) for x in (px, py, pz, E)))
             check_shapes(self._px, self._py, self._pz, self._E, self._lib)
-            self._px, self._py, self._pz, self._E = own_components(
-                self._px, self._py, self._pz, self._E)
+            components = (self._px, self._py, self._pz, self._E)
+            if trusted and self._lib == 'np':
+                # Callers supply fresh arithmetic results or immutable owned
+                # components. Reject complex/object results before promotion.
+                if any(isinstance(x, np.ndarray) and x.dtype.kind not in 'biuf'
+                       for x in components):
+                    raise TypeError("Vector components must be real numeric values")
+                components = tuple(freeze_array(np.asarray(x, dtype=np.float64))
+                                   if isinstance(x, np.ndarray) else float(x)
+                                   for x in components)
+            else:
+                # Awkward ufunc results can reuse index/offset buffers from an
+                # external scalar/angle array. Keep a snapshot of those too.
+                components = own_components(*components)
+            self._px, self._py, self._pz, self._E = components
         except Exception as e:
             if isinstance(e, ShapeError):
                 raise
             raise BackendError("initialization", getattr(self, "_lib", "unknown"), str(e))
             
+    def _initialize_cache(self, max_cache_size=None, default_ttl=None, *,
+                          cache_intermediates=False, cache_stats=True):
+        """Initialize lazy derived-property bookkeeping for either factory."""
         # Initialize the enhanced caching system with memory optimization features
         self._cache = PropertyCache(max_size=max_cache_size, default_ttl=default_ttl,
                                     cache_intermediates=cache_intermediates,
@@ -71,8 +96,27 @@ class LVec:
             self._cache.register_dependency('p_squared', ['px', 'py', 'pz'])
             self._cache.register_dependency('pt_squared', ['px', 'py'])
         
+    @classmethod
+    def _from_owned(cls, px, py, pz, E, max_cache_size=None, default_ttl=None,
+                    *, validate=False, cache_intermediates=False, cache_stats=True):
+        """Construct from fresh results or existing immutable owned buffers.
+
+        Private trusted path: never pass caller-owned mutable arrays here.
+        Public construction always takes independent component snapshots.
+        """
+        if cls is not LVec:
+            # Preserve custom subclass initialization behavior.
+            return cls(px, py, pz, E, max_cache_size=max_cache_size,
+                       default_ttl=default_ttl, validate=validate,
+                       cache_intermediates=cache_intermediates, cache_stats=cache_stats)
+        result = cls.__new__(cls)
+        result._initialize_components(px, py, pz, E, trusted=True)
+        result._initialize_cache(max_cache_size, default_ttl,
+                                 cache_intermediates=cache_intermediates,
+                                 cache_stats=cache_stats)
         if validate:
-            self.validate_particle()
+            result.validate_particle()
+        return result
 
     def is_physical(self, rtol=1e-12, atol=0.0):
         """Mask finite, future-directed timelike/lightlike particle momenta.
@@ -114,12 +158,12 @@ class LVec:
                  validate=False, cache_intermediates=False, cache_stats=True):
         """Create from pt, eta, phi, mass."""
         # First convert to arrays and get the lib type
-        pt, eta, phi, m, lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (pt, eta, phi, m)))
+        pt, eta, phi, m, lib = ensure_array(*(normalize_scalar(x) for x in (pt, eta, phi, m)))
         pt, eta, phi, m = own_components(pt, eta, phi, m)
         if validate and backend_any((pt < 0) | (m < 0)):
             raise InputError("pt or mass", "negative", "Particle pt and mass must be non-negative")
         px, py, pz, E = compute_p4_from_ptepm(pt, eta, phi, m, lib)
-        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl,
+        return cls._from_owned(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl,
                    validate=validate, cache_intermediates=cache_intermediates,
                    cache_stats=cache_stats)
     
@@ -279,6 +323,14 @@ class LVec:
         """
         def calc_mass():
             m2 = self._E**2 - self._p_squared()
+            if isinstance(m2, np.ndarray):
+                # m2 is a fresh temporary: reuse it for the result instead of
+                # allocating sign, absolute-value and square-root float arrays.
+                negative = np.signbit(m2)
+                np.abs(m2, out=m2)
+                np.sqrt(m2, out=m2)
+                np.negative(m2, out=m2, where=negative)
+                return m2
             return np.sign(m2) * np.sqrt(abs(m2))
         return self._get_cached('mass', calc_mass, ['px', 'py', 'pz', 'E'])
 
@@ -310,24 +362,24 @@ class LVec:
 
     def __add__(self, other):
         """Add two Lorentz vectors."""
-        return LVec(self.px + other.px, self.py + other.py,
+        return LVec._from_owned(self.px + other.px, self.py + other.py,
                    self.pz + other.pz, self.E + other.E)
     
     def __sub__(self, other):
         """Subtract two Lorentz vectors."""
-        return LVec(self.px - other.px, self.py - other.py,
+        return LVec._from_owned(self.px - other.px, self.py - other.py,
                    self.pz - other.pz, self.E - other.E)
     
     def __mul__(self, scalar):
         """Multiply by scalar."""
-        return LVec(scalar * self.px, scalar * self.py,
+        return LVec._from_owned(scalar * self.px, scalar * self.py,
                    scalar * self.pz, scalar * self.E)
     
     __rmul__ = __mul__
     
     def __getitem__(self, idx):
         """Index into vector components."""
-        return LVec(self.px[idx], self.py[idx],
+        return LVec._from_owned(self.px[idx], self.py[idx],
                    self.pz[idx], self.E[idx])
     
     def boost(self, bx, by, bz):
@@ -342,7 +394,7 @@ class LVec:
         try:
             # Normalize array-like boost components without changing vector
             # component broadcasting rules.
-            bx, by, bz, boost_lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (bx, by, bz)))
+            bx, by, bz, boost_lib = ensure_array(*(normalize_scalar(x) for x in (bx, by, bz)))
             bx, by, bz = own_components(bx, by, bz)
             b2 = validate_beta(bx, by, bz)
             gamma = 1.0 / backend_sqrt(1.0 - b2, boost_lib)
@@ -355,7 +407,7 @@ class LVec:
             pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
             E = gamma*(self.E + bp)
     
-            return LVec(px, py, pz, E)
+            return LVec._from_owned(px, py, pz, E)
         except Exception as e:
             if isinstance(e, (InputError, DependencyError)):
                 raise
@@ -368,7 +420,7 @@ class LVec:
     def rotx(self, angle):
         """Rotate around x-axis."""
         c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec(self.px,
+        return LVec._from_owned(self.px,
                    c*self.py - s*self.pz,
                    s*self.py + c*self.pz,
                    self.E)
@@ -376,7 +428,7 @@ class LVec:
     def roty(self, angle):
         """Rotate around y-axis."""
         c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec(c*self.px + s*self.pz,
+        return LVec._from_owned(c*self.px + s*self.pz,
                    self.py,
                    -s*self.px + c*self.pz,
                    self.E)
@@ -384,7 +436,7 @@ class LVec:
     def rotz(self, angle):
         """Rotate around z-axis."""
         c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec(c*self.px - s*self.py,
+        return LVec._from_owned(c*self.px - s*self.py,
                    s*self.px + c*self.py,
                    self.pz,
                    self.E)

@@ -224,3 +224,53 @@ def test_nonfinite_particle_validation_is_warning_free():
             v.validate_particle()
         with pytest.raises(InputError):
             Frame(np.array([1e300]), np.array([0.]), np.array([0.]))
+
+
+def test_internal_results_reuse_only_safe_component_buffers():
+    px = np.array([1., 2.])
+    v = LVec(px, np.array([2., 3.]), np.array([3., 4.]), np.array([8., 9.]))
+    rotated = v.rotx(.3)
+    assert np.shares_memory(rotated.px, v.px)
+    assert np.shares_memory(rotated.E, v.E)
+    assert not np.shares_memory(rotated.py, v.py)
+    added = v + v
+    assert not np.shares_memory(added.px, v.px)
+    assert not np.shares_memory(added.E, v.E)
+    for result in [rotated, added, v.boost(.1, .2, 0.), v * 2., v - v,
+                   v[:1], LVec.from_ptepm(np.array([1.]), np.array([0.]),
+                                         np.array([0.]), np.array([2.]))]:
+        for component in result.to_p4():
+            assert not component.flags.writeable
+    px[:] = 100.
+    np.testing.assert_array_equal(v.px, [1., 2.])
+    np.testing.assert_array_equal(rotated.px, [1., 2.])
+    np.testing.assert_array_equal(added.px, [2., 4.])
+
+
+def test_signed_mass_numpy_temporary_does_not_modify_components():
+    v = LVec(np.array([2., 1., 0.]), np.zeros(3), np.zeros(3), np.array([1., 1., 2.]))
+    before = tuple(c.copy() for c in v.to_p4())
+    np.testing.assert_allclose(v.mass, [-np.sqrt(3.), 0., 2.])
+    np.testing.assert_allclose(v.mass2, [-3., 0., 4.])
+    for original, after in zip(before, v.to_p4()):
+        np.testing.assert_array_equal(original, after)
+
+
+@pytest.mark.parametrize('constructor, args', [
+    (LVec, (np.complex128(1+2j), 0., 0., 3.)),
+    (LVec.from_ptepm, (np.complex128(1+2j), 0., 0., 1.)),
+    (Vector2D, (np.complex128(1+2j), 0.)),
+    (Vector3D, (np.complex128(1+2j), 0., 0.)),
+    (Frame, (np.complex128(.1+.2j), 0., 0.)),
+])
+def test_complex_numpy_scalars_are_rejected_without_coercion(constructor, args):
+    with pytest.raises((BackendError, TypeError)):
+        constructor(*args)
+
+
+def test_internal_arithmetic_rejects_complex_results():
+    v = LVec(np.array([1.]), np.array([0.]), np.array([0.]), np.array([2.]))
+    with pytest.raises(BackendError):
+        v * 1j
+    with pytest.raises(BackendError):
+        LVec(1., 0., 0., 2.).boost(np.complex128(.1+.2j), 0., 0.)

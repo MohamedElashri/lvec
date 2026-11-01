@@ -940,10 +940,15 @@ Construction snapshots NumPy and Awkward component arrays and marks their
 NumPy buffers read-only. Changing caller-owned inputs cannot change a vector
 or leave its cached observables stale. Public component arrays reject ordinary
 in-place edits; create a new vector for changed components. This adds a copy at
-construction. Deliberate manipulation of private buffers or forcibly changing
-writeability is outside the supported API.
+construction. Deliberate manipulation of private buffers, Awkward `.layout` replacement,
+or forcibly changing writeability is outside the supported API.
 
 Components are promoted to float64 before physics arithmetic, including integer
 and float32 arrays. This avoids integer overflow in squared momenta and provides
 the same precision policy for scalar, NumPy, and Awkward inputs. Complex-valued
 components are not supported.
+
+Internal NumPy arithmetic reuses freshly allocated results and existing owned
+read-only components instead of snapshotting them again. Public constructors
+continue to snapshot external inputs; this private optimization does not expose
+a borrowed mutable-input mode.

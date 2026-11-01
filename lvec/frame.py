@@ -1,6 +1,6 @@
 import numpy as np
 from .backends import (to_np, to_ak, is_ak, is_np, 
-                      backend_sqrt, backend_where, backend_any, validate_beta, own_components)
+                      backend_sqrt, backend_where, backend_any, validate_beta, own_components, normalize_scalar)
 from .utils import ensure_array, check_shapes
 from .exceptions import InputError, BackendError, DependencyError
 
@@ -34,7 +34,7 @@ class Frame:
         """
         self._lib = 'unknown'
         try:
-            bx, by, bz = (float(x) if isinstance(x, np.number) else x for x in (bx, by, bz))
+            bx, by, bz = (normalize_scalar(x) for x in (bx, by, bz))
             # Check if all inputs are scalars
             all_scalars = all(isinstance(b, (float, int)) for b in [bx, by, bz])
             
