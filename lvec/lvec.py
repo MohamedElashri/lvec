@@ -1,10 +1,8 @@
 # lvec.py
-import awkward as ak
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_sin, backend_cos, backend_atan2,
-                        backend_sinh, backend_cosh, backend_where)
-from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
-                   compute_pt, compute_p, compute_mass, compute_eta, compute_phi)
+                        backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components)
+from .utils import ensure_array, check_shapes, compute_p4_from_ptepm
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
 from .frame import Frame
@@ -22,7 +20,7 @@ class LVec:
         _cache: Property caching system for optimized property calculations
     """
     
-    def __init__(self, px, py, pz, E, max_cache_size=None, default_ttl=None):
+    def __init__(self, px, py, pz, E, max_cache_size=None, default_ttl=None, *, validate=False):
         """
         Initialize Lorentz vector from components.
         
@@ -31,36 +29,31 @@ class LVec:
             E: Energy (float, list, ndarray, or ak.Array)
             max_cache_size: Maximum number of entries in the cache (None for unlimited)
             default_ttl: Default time-to-live for cached values in seconds (None for no expiration)
+            validate: Opt in to physical-particle validation (default False)
         
         Raises:
             ShapeError: If input arrays have inconsistent shapes
             InputError: If any input has invalid values
             BackendError: If there's an issue with the backend operations
         """
+        self._lib = 'unknown'
         try:
-            self._px, self._py, self._pz, self._E, self._lib = ensure_array(px, py, pz, E)
+            self._px, self._py, self._pz, self._E, self._lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (px, py, pz, E)))
             check_shapes(self._px, self._py, self._pz, self._E, self._lib)
+            self._px, self._py, self._pz, self._E = own_components(
+                self._px, self._py, self._pz, self._E)
         except Exception as e:
             if isinstance(e, ShapeError):
                 raise
             raise BackendError("initialization", self._lib, str(e))
             
-        # Validate physics constraints
-        if isinstance(self._E, (float, int)):
-            if self._E < 0:
-                raise InputError("E", self._E, "Energy must be non-negative")
-        else:
-            if self._lib == 'np' and (self._E < 0).any():
-                raise InputError("E", "array", "energy values must be non-negative")
-            elif self._lib == 'ak' and ak.any(self._E < 0):
-                raise InputError("E", "array", "energy values must be non-negative")
-                
         # Initialize the enhanced caching system with memory optimization features
         self._cache = PropertyCache(max_size=max_cache_size, default_ttl=default_ttl)
         
         # Register property dependencies
         self._cache.register_dependency('pt', ['px', 'py'])
         self._cache.register_dependency('p', ['px', 'py', 'pz'])
+        self._cache.register_dependency('mass2', ['px', 'py', 'pz', 'E'])
         self._cache.register_dependency('mass', ['px', 'py', 'pz', 'E'])
         self._cache.register_dependency('phi', ['px', 'py'])
         self._cache.register_dependency('eta', ['px', 'py', 'pz'])
@@ -72,18 +65,51 @@ class LVec:
         self._cache.register_dependency('p_squared', ['px', 'py', 'pz'])
         self._cache.register_dependency('pt_squared', ['px', 'py'])
         
+        if validate:
+            self.validate_particle()
+
+    def is_physical(self, rtol=1e-12, atol=0.0):
+        """Mask finite, future-directed timelike/lightlike particle momenta.
+
+        ``atol`` has units of energy squared. The relative tolerance scales
+        with max(E², |p|²); raw ``mass2`` is never clipped.
+        """
+        if not np.isfinite(rtol) or not np.isfinite(atol) or rtol < 0 or atol < 0:
+            raise ValueError("Particle validation tolerances must be finite and non-negative")
+        finite = (np.isfinite(self.px) & np.isfinite(self.py)
+                  & np.isfinite(self.pz) & np.isfinite(self.E))
+        with np.errstate(invalid='ignore', over='ignore'):
+            p2 = self._p_squared()
+            e2 = self.E**2
+            tolerance = atol + rtol * np.maximum(e2, p2)
+            return finite & (self.E >= 0) & ((e2 - p2) >= -tolerance)
+
+    def validate_particle(self, rtol=1e-12, atol=0.0):
+        """Raise InputError for invalid particle momenta; return self otherwise.
+
+        Mathematical four-vectors may have negative energy or be spacelike.
+        Use this opt-in check when the object represents physical particles.
+        Missing Awkward values are preserved and excluded from validation.
+        """
+        if backend_any(~self.is_physical(rtol=rtol, atol=atol)):
+            raise InputError("four-momentum", "particle", "Components must be finite, energy must be non-negative, and mass² must be non-negative within tolerance")
+        return self
+
     @classmethod
-    def from_p4(cls, px, py, pz, E, max_cache_size=None, default_ttl=None):
+    def from_p4(cls, px, py, pz, E, max_cache_size=None, default_ttl=None, *, validate=False):
         """Create from Cartesian components."""
-        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl)
+        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl, validate=validate)
     
     @classmethod
-    def from_ptepm(cls, pt, eta, phi, m, max_cache_size=None, default_ttl=None):
+    def from_ptepm(cls, pt, eta, phi, m, max_cache_size=None, default_ttl=None, *, validate=False):
         """Create from pt, eta, phi, mass."""
         # First convert to arrays and get the lib type
-        pt, eta, phi, m, lib = ensure_array(pt, eta, phi, m)
+        pt, eta, phi, m, lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (pt, eta, phi, m)))
+        pt, eta, phi, m = own_components(pt, eta, phi, m)
+        if validate and backend_any((pt < 0) | (m < 0)):
+            raise InputError("pt or mass", "negative", "Particle pt and mass must be non-negative")
         px, py, pz, E = compute_p4_from_ptepm(pt, eta, phi, m, lib)
-        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl)
+        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl, validate=validate)
     
     @classmethod
     def from_ary(cls, ary_dict):
@@ -227,49 +253,23 @@ class LVec:
                              ['px', 'py', 'pz'])
     
     @property
+    def mass2(self):
+        """Signed invariant mass squared with metric (+, -, -, -)."""
+        return self._get_cached('mass2', lambda: self._E**2 - self._p_squared(),
+                                ['px', 'py', 'pz', 'E'])
+
+    @property
     def mass(self):
-        """Invariant mass."""
+        """Signed invariant mass: sign(m²) sqrt(abs(m²)).
+
+        A negative result denotes a spacelike four-vector. No arbitrary
+        dimensionful tolerance or absolute value hides the sign of m².
+        """
         def calc_mass():
-            # E² - p² calculation optimized with intermediate results
-            E_squared = self._E**2
-            p_squared = self._p_squared()
-            m_squared = E_squared - p_squared
-            
-            # Handle numerical precision issues (for physical particles, m² should be ≥ 0)
-            if isinstance(m_squared, (float, int)):
-                if m_squared < 0:
-                    if abs(m_squared) < 1e-10:  # Small tolerance for numerical precision
-                        m_squared = 0
-                    # Large negative values are a problem
-                    elif m_squared < -1e-6:
-                        import warnings
-                        warnings.warn(f"Mass calculation resulted in negative m²={m_squared}")
-                        m_squared = abs(m_squared)
-            else:
-                # Array case
-                if self._lib == 'np':
-                    if (m_squared < 0).any():
-                        # Check for numerically significant negative values
-                        problematic = (m_squared < -1e-6)
-                        if problematic.any():
-                            import warnings
-                            warnings.warn("Mass calculation resulted in negative m² values")
-                        # Take absolute value to ensure physical result
-                        m_squared = np.where(m_squared < 0, abs(m_squared), m_squared)
-                elif self._lib == 'ak':
-                    import awkward as ak
-                    if ak.any(m_squared < 0):
-                        problematic = (m_squared < -1e-6)
-                        if ak.any(problematic):
-                            import warnings
-                            warnings.warn("Mass calculation resulted in negative m² values")
-                        # Take absolute value with the appropriate backend
-                        m_squared = ak.where(m_squared < 0, abs(m_squared), m_squared)
-            
-            return backend_sqrt(m_squared, self._lib)
-        
+            m2 = self._E**2 - self._p_squared()
+            return np.sign(m2) * np.sqrt(abs(m2))
         return self._get_cached('mass', calc_mass, ['px', 'py', 'pz', 'E'])
-    
+
     @property
     def phi(self):
         """Azimuthal angle."""
@@ -279,46 +279,23 @@ class LVec:
     
     @property
     def eta(self):
-        """Pseudorapidity."""
+        """Pseudorapidity, asinh(pz/pt).
+
+        Beam-axis vectors have signed infinity. The zero spatial vector has
+        eta=0 by convention. Missing Awkward entries remain missing.
+        """
         def calc_eta():
-            p = self.p  # This will use our cached property
-            pz = self._pz
-            # Use a small epsilon to avoid division by zero
-            epsilon = 1e-10
-            
-            if self._lib == 'np':
-                # For NumPy, handle scalar and array cases
-                if isinstance(p, (float, int)) and isinstance(pz, (float, int)):
-                    if abs(p - abs(pz)) < epsilon:
-                        # When p ≈ |pz|, the particle is along the beam axis
-                        return float('inf') if pz >= 0 else float('-inf')
-                    # Numerically stable formula for eta
-                    return 0.5 * np.log((p + pz) / (p - pz))
-                else:
-                    # Array case with mask for special values
-                    near_beam = (abs(p - abs(pz)) < epsilon)
-                    # First compute the standard formula
-                    result = 0.5 * np.log((p + pz) / (p - pz + epsilon))
-                    # Then correct special cases (if any)
-                    if near_beam.any():
-                        result = np.where(near_beam & (pz >= 0), np.inf, result)
-                        result = np.where(near_beam & (pz < 0), -np.inf, result)
-                    return result
-            else:
-                # For Awkward arrays
-                import awkward as ak
-                # Define a small epsilon to avoid division by zero
-                near_beam = (abs(p - abs(pz)) < epsilon)
-                # Compute the standard formula
-                result = 0.5 * backend_log((p + pz) / (p - pz + epsilon), self._lib)
-                # Correct special cases
-                if ak.any(near_beam):
-                    result = ak.where(near_beam & (pz >= 0), np.inf, result)
-                    result = ak.where(near_beam & (pz < 0), -np.inf, result)
-                return result
-                
+            pt = np.hypot(self._px, self._py)
+            # Select a safe denominator before division, so zero vectors do
+            # not produce runtime warnings on either array backend.
+            safe_pt = backend_where(pt == 0, 1.0, pt, self._lib)
+            eta = np.arcsinh(self._pz / safe_pt)
+            beam_eta = backend_where(self._pz == 0, 0.0,
+                                     backend_where(self._pz > 0, np.inf, -np.inf, self._lib),
+                                     self._lib)
+            return backend_where(pt == 0, beam_eta, eta, self._lib)
         return self._get_cached('eta', calc_eta, ['px', 'py', 'pz'])
-    
+
     def __add__(self, other):
         """Add two Lorentz vectors."""
         return LVec(self.px + other.px, self.py + other.py,
@@ -351,46 +328,16 @@ class LVec:
             DependencyError: If required backend package is not available
         """
         try:
-            b2 = bx*bx + by*by + bz*bz
-            if isinstance(b2, (float, int)):
-                if b2 >= 1:
-                    raise InputError("boost velocity", f"√{b2}", "Must be < 1 (speed of light)")
-            else:
-                if self._lib == 'np' and (b2 >= 1).any():
-                    raise InputError("boost velocity", "array", "All values must be < 1 (speed of light)")
-                elif self._lib == 'ak':
-                    try:
-                        import awkward
-                    except ImportError:
-                        raise DependencyError("awkward", "pip install awkward")
-                    if awkward.any(b2 >= 1):
-                        raise InputError("boost velocity", "array", "All values must be < 1 (speed of light)")
-            
-            # ...existing boost implementation...
-            gamma = 1.0 / backend_sqrt(1.0 - b2, self._lib)
+            # Normalize array-like boost components without changing vector
+            # component broadcasting rules.
+            bx, by, bz, boost_lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (bx, by, bz)))
+            bx, by, bz = own_components(bx, by, bz)
+            b2 = validate_beta(bx, by, bz)
+            gamma = 1.0 / backend_sqrt(1.0 - b2, boost_lib)
             bp = bx*self.px + by*self.py + bz*self.pz
-        
-            # Calculate gamma2 without division by zero
-            # When b2 is very small, use the Taylor expansion approximation: (gamma-1)/b2 ≈ 0.5
-            epsilon = 1e-10
-            
-            if isinstance(b2, (float, int)):
-                # Handle scalar case
-                gamma2 = 0.0 if b2 <= epsilon else (gamma - 1.0) / b2
-            elif self._lib == 'np':
-                # Handle NumPy array case
-                gamma2 = np.zeros_like(b2)
-                mask = (b2 > epsilon)
-                if mask.any():
-                    gamma2[mask] = (gamma[mask] - 1.0) / b2[mask]
-            else:
-                # Handle Awkward array case
-                import awkward as ak
-                gamma2 = ak.zeros_like(b2)
-                mask = (b2 > epsilon)
-                if ak.any(mask):
-                    gamma2 = ak.where(mask, (gamma - 1.0) / b2, gamma2)
-        
+            # Equivalent to (gamma-1)/beta², stable at beta=0 and tiny beta.
+            gamma2 = gamma * gamma / (gamma + 1.0)
+
             px = self.px + gamma2*bp*bx + gamma*bx*self.E
             py = self.py + gamma2*bp*by + gamma*by*self.E
             pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
@@ -493,16 +440,16 @@ class LVec:
             The new LVec in the target frame.
         """
         # Step 1: First boost from current_frame back to the universal rest frame
-        # We apply the opposite boost of the current_frame's velocity
-        unboosted = self.boost(-current_frame.beta_x, 
-                              -current_frame.beta_y, 
-                              -current_frame.beta_z)
+        # Undo the passive transform by an active boost +beta_current.
+        unboosted = self.boost(current_frame.beta_x,
+                              current_frame.beta_y,
+                              current_frame.beta_z)
         
         # Step 2: Now boost into the target_frame
-        # We apply the velocity of the target_frame
-        final = unboosted.boost(target_frame.beta_x,
-                              target_frame.beta_y,
-                              target_frame.beta_z)
+        # Apply the passive transform with -beta_target.
+        final = unboosted.boost(-target_frame.beta_x,
+                              -target_frame.beta_y,
+                              -target_frame.beta_z)
         
         return final
     

@@ -1,6 +1,6 @@
 import numpy as np
 from .backends import (to_np, to_ak, is_ak, is_np, 
-                      backend_sqrt, backend_where)
+                      backend_sqrt, backend_where, backend_any, validate_beta, own_components)
 from .utils import ensure_array, check_shapes
 from .exceptions import InputError, BackendError, DependencyError
 
@@ -9,7 +9,8 @@ class Frame:
     Represents a particular reference frame in which LVecs can be expressed.
     
     A Frame is characterized by a 3-velocity (beta_x, beta_y, beta_z) that represents
-    the velocity needed to boost from the universal rest frame to this frame.
+    the physical velocity of this frame relative to the lab frame.
+    Coordinates transform into it with a passive boost by minus this velocity.
     
     Attributes:
         beta_x, beta_y, beta_z: Components of velocity in units of c
@@ -31,7 +32,9 @@ class Frame:
             InputError: If boost velocity is >= speed of light
             BackendError: If there's an issue with the backend operations
         """
+        self._lib = 'unknown'
         try:
+            bx, by, bz = (float(x) if isinstance(x, np.number) else x for x in (bx, by, bz))
             # Check if all inputs are scalars
             all_scalars = all(isinstance(b, (float, int)) for b in [bx, by, bz])
             
@@ -46,25 +49,10 @@ class Frame:
                 # Validate shape consistency
                 check_shapes(self._beta_x, self._beta_y, self._beta_z, self._lib)
             
-            # Validate that velocity is less than speed of light
-            b2 = self._beta_x**2 + self._beta_y**2 + self._beta_z**2
-            
-            if isinstance(b2, (float, int)):
-                if b2 >= 1:
-                    raise InputError("boost velocity", f"√{b2}", "Must be < 1 (speed of light)")
-            else:
-                if self._lib == 'np' and (b2 >= 1).any():
-                    raise InputError("boost velocity", "array", 
-                                    "All values must be < 1 (speed of light)")
-                elif self._lib == 'ak':
-                    try:
-                        import awkward as ak
-                    except ImportError:
-                        raise DependencyError("awkward", "pip install awkward")
-                    if ak.any(b2 >= 1):
-                        raise InputError("boost velocity", "array", 
-                                        "All values must be < 1 (speed of light)")
-                        
+            self._beta_x, self._beta_y, self._beta_z = own_components(
+                self._beta_x, self._beta_y, self._beta_z)
+            validate_beta(self._beta_x, self._beta_y, self._beta_z)
+
         except Exception as e:
             if isinstance(e, (InputError, DependencyError)):
                 raise
@@ -110,37 +98,11 @@ class Frame:
             InputError: If energy component is zero
             BackendError: If there's an issue with the backend operations
         """
-        # Get the momentum and energy components
-        px, py, pz = total_lvec.px, total_lvec.py, total_lvec.pz
-        E = total_lvec.E
-        
-        # Get the library type from total_lvec for consistent handling
-        lib = total_lvec._lib
-        
-        # Avoid dividing by zero if E==0
-        if isinstance(E, (float, int)):
-            if E == 0:
-                raise InputError("Energy", E, 
-                                "Cannot create a rest frame for a system with zero energy")
-            # Calculate the velocity needed to boost to the CM frame
-            # This is the negative of the total momentum divided by total energy
-            bx, by, bz = -px / E, -py / E, -pz / E
-        else:
-            # Array case - handle with care using the appropriate backend
-            if lib == 'np':
-                if np.any(E == 0):
-                    raise InputError("Energy", "array",
-                                    "Cannot create rest frames for systems with zero energy")
-                bx, by, bz = -px / E, -py / E, -pz / E
-            elif lib == 'ak':
-                try:
-                    import awkward as ak
-                except ImportError:
-                    raise DependencyError("awkward", "pip install awkward")
-                if ak.any(E == 0):
-                    raise InputError("Energy", "array",
-                                    "Cannot create rest frames for systems with zero energy")
-                bx, by, bz = -px / E, -py / E, -pz / E
+        # A rest frame exists only for a finite timelike four-vector.
+        px, py, pz, E = total_lvec.to_p4()
+        if backend_any(~np.isfinite(E) | (E == 0)):
+            raise InputError("Energy", "zero or non-finite", "A rest frame requires finite nonzero energy")
+        bx, by, bz = px / E, py / E, pz / E
 
         return cls(bx, by, bz, name=name)
 
@@ -165,6 +127,7 @@ class Frame:
             ValueError: If lvec_list is empty
             TypeError: If items in lvec_list are not LVec objects
         """
+        lvec_list = tuple(lvec_list)
         if not lvec_list:
             raise ValueError("Cannot create a center-of-mass frame from an empty list")
             
