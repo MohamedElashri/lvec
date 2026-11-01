@@ -21,6 +21,7 @@ Angles are radians; momentum, energy, and mass must use consistent units with
 - [Numerical accuracy](#numerical-accuracy)
 - [Examples](#examples)
 - [Development and benchmarks](#development-and-benchmarks)
+- [Workflow dependencies](#workflow-dependencies)
 - [Building and releasing](#building-and-releasing)
 - [Citation](#citation)
 
@@ -453,6 +454,31 @@ Recorded data are available in the
 [scaling report](benchmarks/results/stress-2026-11-01.json),
 [invariant accuracy report](benchmarks/results/invariant-accuracy-2026-11-01.json),
 and [adaptive report](benchmarks/results/adaptive-precision-2026-11-01.json).
+
+## Workflow dependencies
+
+[Sanad](https://github.com/MohamedElashri/sanad) manages the native GitHub Actions
+lockfile at `.github/workflows/actions.lock`. Its policy lives in `.sanad.toml`.
+The lockfile covers both CI and publishing workflows, including transitive action
+dependencies, and the CI check verifies the frozen dependency graph.
+
+After editing action references or adding a workflow, review and reconcile the
+lockfile with:
+
+```bash
+sanad sync
+sanad sync --write
+sanad check
+```
+
+Use `sanad plan` to review available dependency updates and `sanad update --write`
+to apply eligible changes. Commit the lockfile together with workflow changes;
+do not edit its generated contents by hand.
+
+Markdown-only and documentation-directory changes skip CI. A change that also
+touches code, package metadata, dependencies, workflow files, or the action
+lockfile runs CI normally. Release publishing is event-driven and remains
+independent of these path filters.
 
 ## Building and releasing
 
