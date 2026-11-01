@@ -1032,3 +1032,50 @@ components and results remain float64. The former expected-failure example
 It is a normal passing regression test, also checked under axis permutations,
 mixed array batches, and jagged missing values. Strict particle validation
 retains the sign of negative squared invariants even when they round to -0.
+
+
+Boosts, rotations, and event sums also select precision recovery by numerical
+risk. Ordinary well-scaled boosts stay in the vectorized kernel after a buffer
+range check. Near the speed-of-light boundary, velocity validation and frame
+`gamma` recover `1-beta²` before rounding can turn a valid velocity into an
+invalid one. Exceptional boosts recompute only affected entries from the
+original float64 components using a local Decimal context; no decimal objects
+are constructed for ordinary entries. This also recovers finite boost results
+whose intermediate expressions overflow. Rotations recover cancelled linear
+combinations using the binary product-sum kernel, and evaluate float32 angle
+arrays at float64 precision.
+
+Event reductions detect severe cancellation and intermediate range failures.
+Only affected groups receive compensated summation (short groups) or
+[`math.fsum`](https://docs.python.org/3/library/math.html#math.fsum) (long or
+extreme groups). An exact binary accumulator handles intermediate overflow in
+fsum. Groups with at most two entries retain native addition. The recovery
+preserves NumPy axes/keepdims and Awkward ragged lists, missing particles, and
+missing events; ordinary groups do not enter a Python loop over events.
+
+Detection itself has a cost. The
+[adaptive precision report](../benchmarks/results/adaptive-precision-2026-11-01.json)
+compares the same seeded workloads with commit `6ab83bf`. At one million
+entries, NumPy boost/rotation/sum times were approximately 17.0/6.6/12.7 ms,
+versus 10.9/2.6/6.4 ms before these checks. Jagged-array boosts and rotations
+were within about 7% of baseline; jagged sums took about twice as long.
+These measurements include guards even when no high-precision fallback runs.
+Mixed-batch probes verify that 0, 1, or 1,000 extreme vectors in 100,000 entries
+recover exactly that many entries. The 1,000-entry fallback costs about 0.2 s;
+its extra arithmetic is deliberately reserved for affected entries.
+
+To reproduce the ordinary and mixed-batch measurements:
+
+```bash
+PYTHONPATH=. python benchmarks/adaptive_precision.py --before /path/to/baseline --after .
+PYTHONPATH=. python benchmarks/adaptive_precision.py --probe --repeats 3
+```
+
+The risk thresholds identify severe cancellation (roughly `sqrt(eps)` of the
+sum bound), extreme component hierarchies, and near-light-speed boosts. They
+preserve ordinary float64 rounding behavior within that scale; they do not
+promise exact rounding for every possible calculation. Float64 inputs and
+outputs still limit recoverable precision. Regression tests compare exceptional
+cases with Fraction, integer, and high-precision Decimal oracles, and verify that
+ordinary inputs do not call precision fallbacks. CI treats runtime warnings as
+errors during tests.

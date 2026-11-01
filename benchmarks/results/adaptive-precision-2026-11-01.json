@@ -1,0 +1,242 @@
+{
+  "python": "3.13.12",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "repeats": 7,
+  "calls_per_repeat": 3,
+  "rows": [
+    {
+      "kind": "numpy",
+      "size": 1000,
+      "before": {
+        "kind": "numpy",
+        "size": 1000,
+        "boost_s": 4.9458331583688654e-05,
+        "rotation_s": 2.112500078510493e-05,
+        "sum_s": 3.051400320449223e-05
+      },
+      "after": {
+        "kind": "numpy",
+        "size": 1000,
+        "boost_s": 8.73053310594211e-05,
+        "rotation_s": 4.251366772223264e-05,
+        "sum_s": 5.836133398891737e-05
+      },
+      "after_over_before": {
+        "boost": 1.7652300080460939,
+        "rotation": 2.0124812375017136,
+        "sum": 1.9126082408068141
+      }
+    },
+    {
+      "kind": "numpy",
+      "size": 100000,
+      "before": {
+        "kind": "numpy",
+        "size": 100000,
+        "boost_s": 0.0006318889985171457,
+        "rotation_s": 0.00016906933160498738,
+        "sum_s": 0.0006401666663199043
+      },
+      "after": {
+        "kind": "numpy",
+        "size": 100000,
+        "boost_s": 0.001174971999716945,
+        "rotation_s": 0.0004002223286079243,
+        "sum_s": 0.0008394999992257605
+      },
+      "after_over_before": {
+        "boost": 1.8594594975925398,
+        "rotation": 2.367208321039569,
+        "sum": 1.3113772450098882
+      }
+    },
+    {
+      "kind": "numpy",
+      "size": 1000000,
+      "before": {
+        "kind": "numpy",
+        "size": 1000000,
+        "boost_s": 0.010873027664880889,
+        "rotation_s": 0.0026133333303732798,
+        "sum_s": 0.0064106943367126705
+      },
+      "after": {
+        "kind": "numpy",
+        "size": 1000000,
+        "boost_s": 0.017047930329378385,
+        "rotation_s": 0.006632375002178985,
+        "sum_s": 0.012685680664920559
+      },
+      "after_over_before": {
+        "boost": 1.5679101401021902,
+        "rotation": 2.5378986006471815,
+        "sum": 1.9788309968660318
+      }
+    },
+    {
+      "kind": "jagged",
+      "size": 1000,
+      "before": {
+        "kind": "jagged",
+        "size": 1000,
+        "boost_s": 0.00533499999922545,
+        "rotation_s": 0.0024106389998147884,
+        "sum_s": 0.0009480416629230604
+      },
+      "after": {
+        "kind": "jagged",
+        "size": 1000,
+        "boost_s": 0.0025660140042115622,
+        "rotation_s": 0.0019537776679499075,
+        "sum_s": 0.0023764166641437137
+      },
+      "after_over_before": {
+        "boost": 0.48097732044687974,
+        "rotation": 0.810481232610946,
+        "sum": 2.506658469857326
+      }
+    },
+    {
+      "kind": "jagged",
+      "size": 100000,
+      "before": {
+        "kind": "jagged",
+        "size": 100000,
+        "boost_s": 0.00842155566594253,
+        "rotation_s": 0.004520500001187126,
+        "sum_s": 0.0019331249980799232
+      },
+      "after": {
+        "kind": "jagged",
+        "size": 100000,
+        "boost_s": 0.007362972003951048,
+        "rotation_s": 0.0050900693361957865,
+        "sum_s": 0.004404874998726882
+      },
+      "after_over_before": {
+        "boost": 0.8743006988278327,
+        "rotation": 1.1259969770731304,
+        "sum": 2.2786291642299514
+      }
+    },
+    {
+      "kind": "jagged",
+      "size": 1000000,
+      "before": {
+        "kind": "jagged",
+        "size": 1000000,
+        "boost_s": 0.056816902666469105,
+        "rotation_s": 0.03661261133189934,
+        "sum_s": 0.01276623600278981
+      },
+      "after": {
+        "kind": "jagged",
+        "size": 1000000,
+        "boost_s": 0.0607884863372116,
+        "rotation_s": 0.037935583333213195,
+        "sum_s": 0.026258694332985517
+      },
+      "after_over_before": {
+        "boost": 1.0699014463012317,
+        "rotation": 1.0361343251187658,
+        "sum": 2.0568861743780387
+      }
+    }
+  ],
+  "date": "2026-11-01",
+  "baseline_revision": "6ab83bf",
+  "implementation": "The commit containing this report, on test/stress-physics-performance",
+  "numpy": "2.5.4",
+  "awkward": "2.14.0",
+  "command": "PYTHONPATH=. python benchmarks/adaptive_precision.py --before /private/tmp/lvec-adaptive-baseline --after .",
+  "probe_command": "PYTHONPATH=. python benchmarks/adaptive_precision.py --probe --repeats 3",
+  "mixed_batch_probes": [
+    {
+      "kind": "numpy",
+      "size": 100000,
+      "exceptional": 0,
+      "recovered_entries": 0,
+      "boost_s": 0.001174374992842786,
+      "first_energy": 4.567424641836503
+    },
+    {
+      "kind": "numpy",
+      "size": 100000,
+      "exceptional": 1,
+      "recovered_entries": 1,
+      "boost_s": 0.0026214999961666763,
+      "first_energy": 2.2941573387056175e+307
+    },
+    {
+      "kind": "numpy",
+      "size": 100000,
+      "exceptional": 1000,
+      "recovered_entries": 1000,
+      "boost_s": 0.20508724999672268,
+      "first_energy": 2.2941573387056175e+307
+    },
+    {
+      "kind": "jagged",
+      "size": 100000,
+      "exceptional": 0,
+      "recovered_entries": 0,
+      "boost_s": 0.006361958003253676,
+      "first_energy": 4.567424641836503
+    },
+    {
+      "kind": "jagged",
+      "size": 100000,
+      "exceptional": 1,
+      "recovered_entries": 1,
+      "boost_s": 0.0077422909962479025,
+      "first_energy": 2.2941573387056175e+307
+    },
+    {
+      "kind": "jagged",
+      "size": 100000,
+      "exceptional": 1000,
+      "recovered_entries": 1000,
+      "boost_s": 0.2109095409978181,
+      "first_energy": 2.2941573387056175e+307
+    }
+  ],
+  "validation": {
+    "current": {
+      "numpy": "2.5.4",
+      "awkward": "2.14.0",
+      "passed": 324
+    },
+    "minimum": {
+      "numpy": "2.2.4",
+      "awkward": "2.7.4",
+      "passed": 324
+    },
+    "numpy_only": {
+      "numpy": "2.5.4",
+      "passed": 212,
+      "skipped": 84
+    },
+    "warnings": "All local suites run with -W error; CI rejects RuntimeWarning",
+    "new_regressions": 67,
+    "oracles": "Fraction products, 1500-digit Decimal boosts, integer event sums",
+    "packaging": {
+      "wheel": "built and installed into NumPy-only environment",
+      "sdist": "built with wheel from sdist",
+      "installed_smoke": "passed outside checkout; boost overflow, event cancellation, boundary gamma, and original extreme invariant verified"
+    }
+  },
+  "policy": {
+    "rotation": "Coarse scalar error bounds, then per-entry cancellation/nonfinite masks; selected exact/compensated binary product sums only.",
+    "boost": "Coarse component range bound skips per-entry checks for well-scaled moderate boosts. Finite range failures or cancellation with hierarchy >1e12, gamma >1e4, or subnormal scales use Decimal.from_float on selected original inputs.",
+    "beta": "Recover exact 1-beta^2 near the light-speed boundary before validating or computing gamma.",
+    "sum": "Native reduction and cancellation bound. Compensated short selected groups; fsum for long/extreme groups and dyadic integer recovery if fsum encounters intermediate overflow. Groups of at most two entries retain native correctly rounded addition.",
+    "runtime_dependencies": "No additions. Decimal is imported only inside the exceptional boost fallback."
+  },
+  "limitations": [
+    "Adaptive detection has measurable overhead even when no precision fallback is needed; this report includes that cost.",
+    "These are conservative risk triggers, not a guarantee that every output is correctly rounded or every ill-conditioned transformation is reversible.",
+    "Public results remain float64; unrepresentable results, input rounding, and inverse-boost conditioning remain float64 limitations.",
+    "Times are medians on one machine, not portable CI thresholds. NumPy sizes count supplied vectors; jagged groups have seeded multiplicities 1 through 7. NumPy sums reduce groups of four.",
+    "A thousand extreme boosts in a 100000-vector buffer take roughly 0.2 seconds: recovery cost scales with the number of extreme entries."
+  ]
+}
