@@ -6,6 +6,9 @@ from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_sinh, backend_cosh, backend_log,
                       backend_where, backend_any)
 from .exceptions import ShapeError, BackendError
+from ._exact import accurate_result
+
+_CANCELLATION_RTOL = math.sqrt(np.finfo(np.float64).eps)
 
 def ensure_array(*args):
     """Normalize components, broadcasting scalars to a common array structure.
@@ -137,37 +140,59 @@ def scaled_invariant(E, px, py, pz, lib):
     return scale, e*e - x*x - y*y - z*z
 
 
+def _null_axis(E, px, py, pz):
+    """Prove an entire batch is exactly null along one coordinate axis."""
+    if backend_any(~np.isfinite(E)):
+        return None
+    momentum = (px, py, pz)
+    for axis in range(3):
+        others = [momentum[i] for i in range(3) if i != axis]
+        if (not backend_any(others[0] != 0) and not backend_any(others[1] != 0)
+                and not backend_any(abs(E) != abs(momentum[axis]))):
+            return axis
+    return None
+
+
+def _bounds(value):
+    if is_ak(value):
+        import awkward as ak
+        return (ak.min(value, axis=None, mask_identity=False),
+                ak.max(value, axis=None, mask_identity=False))
+    if isinstance(value, np.ndarray):
+        return value.min(initial=np.inf), value.max(initial=-np.inf)
+    return value, value
+
+
 def dot_result(result, left, right, lib):
-    """Recover finite/null products whose direct intermediate products overflow."""
-    exceptional = ~np.isfinite(result)
+    """Correct overflow and cancellation without discarding small products."""
+    if np.isscalar(result):
+        left_scale, right_scale = max(map(abs, left)), max(map(abs, right))
+    else:
+        left_scale = np.maximum(np.maximum(abs(left[0]), abs(left[1])),
+                                np.maximum(abs(left[2]), abs(left[3])))
+        right_scale = np.maximum(np.maximum(abs(right[0]), abs(right[1])),
+                                 np.maximum(abs(right[2]), abs(right[3])))
+    bound = (_CANCELLATION_RTOL*left_scale)*right_scale
+    exceptional = ~np.isfinite(result) | (abs(result) <= bound)
     if not backend_any(exceptional):
         return result
+    axis = _null_axis(left[3], *left[:3])
+    if axis is not None and _null_axis(right[3], *right[:3]) == axis:
+        if not backend_any(np.sign(left[3])*np.sign(right[3])
+                           != np.sign(left[axis])*np.sign(right[axis])):
+            return np.zeros_like(result)
     if isinstance(result, np.ndarray):
         values = np.broadcast_arrays(*(left + right))
         left, right = values[:4], values[4:]
         left = tuple(value[exceptional] for value in left)
         right = tuple(value[exceptional] for value in right)
     with np.errstate(over='ignore', under='ignore', divide='ignore', invalid='ignore'):
-        scales, normalized = [], []
         finite = True
         for values in (left, right):
-            scale = np.maximum(np.maximum(abs(values[0]), abs(values[1])),
-                               np.maximum(abs(values[2]), abs(values[3])))
-            scales.append(scale)
-            denominator = backend_where(scale == 0, 1., scale, lib)
-            normalized.append(tuple(value / denominator for value in values))
             for value in values:
                 finite = finite & np.isfinite(value)
-        a, b = normalized
-        norm = a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2]
-        # frexp/ldexp prevent both over- and underflow while multiplying very
-        # different scales, including exact cancellation of huge null products.
-        mantissa, exponent = np.frexp(norm)
-        for scale in scales:
-            fraction, power = np.frexp(scale)
-            mantissa = mantissa * fraction
-            exponent = exponent + power
-        fallback = np.ldexp(mantissa, exponent)
+        mask = None if isinstance(result, np.ndarray) else exceptional & finite
+        fallback = accurate_result((*left, *right), lib, dot=True, where=mask)
         if isinstance(result, np.ndarray):
             result[exceptional] = np.where(finite, fallback, result[exceptional])
             return result
@@ -192,35 +217,23 @@ def euclidean_result(squared, *components):
 
 
 def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
-    """Use scaled arithmetic only when the fast squared calculation loses range.
+    """Correct ill-conditioned/range-extreme norms after the vectorized path.
 
     ``m2`` is a fresh temporary, so NumPy results may reuse its storage. Squared
     quantities outside float64's range remain signed infinity/zero; their square
     roots can still be finite and are calculated without squaring the scale.
     """
     tiny = np.finfo(np.float64).tiny
-    if is_ak(m2):
-        import awkward as ak
-        lower = ak.min(m2, axis=None, mask_identity=False)
-        upper = ak.max(m2, axis=None, mask_identity=False)
-    elif isinstance(m2, np.ndarray):
-        lower = m2.min(initial=np.inf)
-        upper = m2.max(initial=-np.inf)
-    else:
-        if math.isfinite(m2) and (abs(m2) >= tiny or (m2 == 0 and abs(E) >= math.sqrt(tiny))):
-            return m2 if squared else math.copysign(math.sqrt(abs(m2)), m2)
-        lower = upper = m2
-    if lower == 0 and upper == 0:
-        # Ordinary null batches are common in photon analyses. A single
-        # reduction rules out underflow without allocating per-particle masks.
-        if is_ak(E):
-            minimum_energy = ak.min(E, axis=None, mask_identity=False)
-        else:
-            minimum_energy = np.min(E)
-        if minimum_energy >= math.sqrt(tiny):
-            return m2
+    lower, upper = _bounds(m2)
+    e_min, e_max = _bounds(E)
+    largest_energy = max(abs(float(e_min)), abs(float(e_max)))
+    bound = (_CANCELLATION_RTOL*largest_energy)*largest_energy
+    if ((lower == 0 and upper == 0) or not np.isfinite(lower) or not np.isfinite(upper)):
+        if _null_axis(E, px, py, pz) is not None:
+            return np.zeros_like(m2)
     # Common timelike/spacelike batches need no masks or scaled temporaries.
-    if (lower >= tiny and np.isfinite(upper)) or (upper <= -tiny and np.isfinite(lower)):
+    if ((lower >= tiny and lower > bound and np.isfinite(upper))
+            or (upper <= -tiny and -upper > bound and np.isfinite(lower))):
         if squared:
             return m2
         if isinstance(m2, np.ndarray):
@@ -232,16 +245,10 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
             return m2
         return np.sqrt(m2) if lower > 0 else -np.sqrt(-m2)
 
-    small = (m2 > -tiny) & (m2 < tiny)
-    if (isinstance(m2, np.ndarray) and np.isfinite(lower) and np.isfinite(upper)
-            and E.min(initial=np.inf) >= math.sqrt(tiny)):
-        # Boosted photon batches often mix positive/negative rounding residuals
-        # and exact zeros. Their ordinary energies rule out zero-by-underflow;
-        # still check every nonzero subnormal without allocating energy masks.
-        exceptional = small & (m2 != 0)
-    else:
-        small_energy = (E > -np.sqrt(tiny)) & (E < np.sqrt(tiny))
-        exceptional = ~np.isfinite(m2) | (small & ((m2 != 0) | small_energy))
+    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        local_bound = (_CANCELLATION_RTOL*abs(E))*abs(E)
+        exceptional = (~np.isfinite(m2) | (abs(m2) <= local_bound)
+                       | ((m2 > -tiny) & (m2 < tiny)))
     with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
         if squared:
             result = m2
@@ -256,15 +263,14 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
         if not backend_any(exceptional):
             return result
 
-        values = (E, px, py, pz)
+        values = (px, py, pz, E)
         if isinstance(m2, np.ndarray):
             values = tuple(value[exceptional] for value in values)
-        scale, norm = scaled_invariant(*values, lib)
-        fallback = ((norm * scale) * scale if squared
-                    else np.sign(norm) * np.sqrt(abs(norm)) * scale)
         finite = np.isfinite(values[0])
         for value in values[1:]:
             finite = finite & np.isfinite(value)
+        mask = None if isinstance(m2, np.ndarray) else exceptional & finite
+        fallback = accurate_result(values, lib, root=not squared, where=mask)
         if isinstance(m2, np.ndarray):
             result[exceptional] = np.where(finite, fallback, result[exceptional])
             return result

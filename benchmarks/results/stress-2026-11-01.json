@@ -46,9 +46,15 @@
       "reproducer": "LVec(1e200, 1., 0., 1e200).mass2",
       "exact_reference": -1.0,
       "observed": 0.0,
-      "status": "strict expected-failure regression test",
+      "status": "resolved in follow-up; original observations below are historical",
       "cause": "The transverse term underflows in normalized float64 intermediate arithmetic.",
-      "next_step": "Compensated product-sum or higher-precision invariant kernel."
+      "resolution": {
+        "mass2": -1.0,
+        "signed_mass": -1.0,
+        "self_dot": -1.0,
+        "expected_failure_removed": true,
+        "report": "invariant-accuracy-2026-11-01.json"
+      }
     }
   },
   "validation": {
@@ -1086,5 +1092,7 @@
         }
       }
     ]
-  }
+  },
+  "implementation_revision": "b480d08",
+  "follow_up_resolution_report": "invariant-accuracy-2026-11-01.json"
 }

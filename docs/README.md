@@ -984,7 +984,9 @@ RSS are separate measurements. Run the same script with `PYTHONPATH` pointing
 at another checkout to compare versions. Timings are measurements, not CI
 pass/fail thresholds. A failed worker makes the script exit unsuccessfully.
 The [recorded stress report](../benchmarks/results/stress-2026-11-01.json)
-contains environments, baseline comparisons, test counts, and the known limit.
+contains the original environments, baseline comparisons, and test counts.
+Its previously expected invariant failure is resolved by the follow-up
+[invariant accuracy report](../benchmarks/results/invariant-accuracy-2026-11-01.json).
 
 Construction checks component structure once; immutable components let
 reductions reuse that guarantee. Awkward conditional calculations restore
@@ -997,17 +999,36 @@ intermediate squares. The coordinate constructor computes energy using hypot,
 and pseudorapidity has a logarithmic fallback for overflowing pz/pt. Opening and
 helicity angles use atan2 of the cross-product magnitude and scalar product,
 retaining small collinear angles that arccos would round to zero.
-Dot products use an exponent-scaled fallback when direct finite-component
-products overflow, including cancellation of very large null momenta.
+Ill-conditioned invariants and dot products use compensated products and sums.
+For extreme component ranges or cancellation beyond that precision, an exact
+binary integer accumulator preserves all input products until the final float64
+rounding. Signed mass is rounded directly from the exact squared value, so a
+squared invariant that overflows to infinity or underflows to signed zero can
+still yield a finite, nonzero mass. NumPy batches select only affected entries;
+Awkward layouts retain their lists and missing-value masks. These fallback paths
+need more work than the ordinary vectorized calculation, but add no runtime
+dependency. The compensated transformations follow
+[Ogita, Rump and Oishi (2005)](https://doi.org/10.1137/030601818).
+
+The explicit cancellation benchmark is opt-in and capped at 10,000 entries:
+
+```bash
+PYTHONPATH=. python benchmarks/stress_lvec.py --kinds extreme --sizes 1 1000 10000
+```
+
+It reports both the expected and observed squared mass for
+`(px, py, pz, E)=(1e200, 1, 0, 1e200)`, alongside timing and memory. This
+adversarial workload exercises exact integer accumulation for every entry;
+near-null photon workloads also require more compensated arithmetic than
+ordinary massive vectors.
 
 Float64 still limits squared observables: an unrepresentable `mass2`, `pt2`,
 or `p2` can be infinite or zero even when its square root is representable.
 Near-lightlike invariant masses suffer cancellation; boosts and inverse boosts
 become ill-conditioned as beta approaches one. Precision lost in supplied
-energy/momentum components cannot be recovered by these methods. Extremely
-hierarchical components can also lose small terms in normalized intermediate
-arithmetic. An explicit expected-failure test records
-`LVec(1e200, 1, 0, 1e200).mass2`: the exact invariant is -1, while the current
-implementation returns zero. This case requires a compensated product-sum or
-higher-precision kernel; it is not counted as a passing physics check. The
-package does not provide arbitrary-precision arithmetic.
+energy/momentum components cannot be recovered by these methods. Public
+components and results remain float64. The former expected-failure example
+`LVec(1e200, 1, 0, 1e200)` now has `mass2=-1`, `mass=-1`, and `dot(v, v)=-1`.
+It is a normal passing regression test, also checked under axis permutations,
+mixed array batches, and jagged missing values. Strict particle validation
+retains the sign of negative squared invariants even when they round to -0.

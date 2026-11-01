@@ -237,8 +237,9 @@ def test_overflowing_dot_fallback_preserves_scalar_array_broadcasting():
         np.testing.assert_array_equal(a.dot(b), np.zeros((2, 3)))
 
 
-@pytest.mark.xfail(strict=True, reason='Float64 scale normalization loses the tiny transverse term')
-def test_known_extreme_hierarchy_invariant_precision_limit():
-    # Large E and px cancel exactly, but (py/scale)**2 underflows before the
-    # current normalized algorithm can recover the physically relevant -1.
-    assert LVec(1e200, 1., 0., 1e200).mass2 == -1.
+def test_extreme_hierarchy_preserves_transverse_invariant():
+    v = LVec(1e200, 1., 0., 1e200)
+    assert v.mass2 == -1.
+    assert v.mass == -1.
+    assert v.dot(v) == -1.
+    assert not v.is_physical(rtol=0)

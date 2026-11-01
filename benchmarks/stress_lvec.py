@@ -48,6 +48,9 @@ def worker(kind, size, repeats):
         p[0] = rng.uniform(1, 100, n)
         p[1:] = 0.
         energy = p[0].copy()
+    if kind == 'extreme':
+        p[0], p[1], p[2] = 1e200, 1., 0.
+        energy = np.full(n, 1e200)
     data = (*p, energy)
     if jagged:
         data = tuple(ak.unflatten(c, counts) for c in data)
@@ -89,6 +92,9 @@ def worker(kind, size, repeats):
         'direct_sum_s': timed(direct_sum, repeats),
         'mass_cache_bytes': cache_bytes,
     }
+    if kind == 'extreme':
+        result['expected_mass2'] = -1.
+        result['observed_mass2'] = float(v.mass2[0])
     v.clear_cache()
     gc.collect()
     tracemalloc.start()
@@ -107,7 +113,7 @@ def main():
     parser.add_argument('--sizes', type=int, nargs='+', default=[1000, 10000, 100000])
     parser.add_argument('--kinds', nargs='+', default=['numpy', 'strided', 'photons', 'jagged',
                                                    'missing', 'deep', 'heavy_tail'],
-                        choices=['numpy', 'strided', 'photons', 'jagged', 'missing', 'deep', 'heavy_tail'])
+                        choices=['numpy', 'strided', 'photons', 'jagged', 'missing', 'deep', 'heavy_tail', 'extreme'])
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -128,6 +134,8 @@ def main():
     for kind in args.kinds:
         for size in args.sizes:
             if kind in {'missing', 'deep', 'heavy_tail'} and size > 100000:
+                continue
+            if kind == 'extreme' and size > 10000:
                 continue
             command = [sys.executable, os.path.abspath(__file__), '--worker', '--sizes', str(size),
                        '--kinds', kind, '--repeats', str(args.repeats)]
