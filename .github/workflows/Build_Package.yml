@@ -3,7 +3,6 @@ name: lvec CI
 on:
   push:
     branches: ["main"]
-  # Validate stacked implementation PRs as well as PRs targeting main.
   pull_request:
 
 permissions:
@@ -64,3 +63,20 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check dist/*
+      - name: Verify installed wheel
+        run: |
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          python - <<'PYCODE'
+          import importlib.metadata
+          import lvec
+          from lvec import LVec
+
+          assert importlib.metadata.version("lvec") == lvec.__version__
+          assert LVec(1e200, 1., 0., 1e200).mass2 == -1.
+          PYCODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error

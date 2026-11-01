@@ -1,6 +1,6 @@
 [project]
 name = "lvec"
-version = "0.1.4"
+version = "0.2.0"
 description = "A package for handling Lorentz vectors with NumPy and Awkward array backends"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,7 +35,7 @@ dev = ["lvec[awkward,test,examples,benchmark]"]
 
 [project.urls]
 Homepage = "https://github.com/MohamedElashri/lvec"
-Documentation = "https://github.com/MohamedElashri/lvec#readme"
+Documentation = "https://github.com/MohamedElashri/lvec/blob/main/user-guide.md"
 Repository = "https://github.com/MohamedElashri/lvec"
 Issues = "https://github.com/MohamedElashri/lvec/issues"
 
