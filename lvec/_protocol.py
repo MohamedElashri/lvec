@@ -10,6 +10,18 @@ from .backends import is_ak, backend_where, backend_any
 from ._adaptive import adaptive_sum
 
 
+def signed_norm(energy,x,y,z,*,squared=False):
+    """Range-aware Minkowski norm, including broadcast numerical parameters."""
+    from ._adaptive import _dispatch
+    from .utils import invariant_result
+    def kernel(e,x,y,z):
+        with np.errstate(over='ignore',under='ignore',invalid='ignore'):
+            result=invariant_result(e*e-(x*x+y*y+z*z),e,x,y,z,'np',squared=squared)
+        return (result,)
+    kernel.outputs=1
+    return _dispatch(kernel,energy,x,y,z)[0]
+
+
 class PlanarAPI:
     _dimension = 2
     __array_priority__ = 1000
@@ -182,6 +194,45 @@ class PlanarAPI:
     pt = property(lambda self: self.rho)
     pt2 = property(lambda self: self.rho2)
 
+    @classmethod
+    def from_coordinates(cls, **coordinates):
+        from ._coordinates import obj
+        result=obj(**coordinates)
+        if result._dimension!=cls._dimension:
+            raise TypeError("Coordinates do not match the class dimension")
+        return result if type(result) is cls else cls(*result._components())
+
+    def to_Vector2D(self):
+        from ._coordinates import project
+        return project(self,2,{})
+
+    def to_Vector3D(self, **coordinates):
+        from ._coordinates import project
+        return project(self,3,coordinates)
+
+    def to_Vector4D(self, **coordinates):
+        from ._coordinates import project
+        return project(self,4,coordinates)
+
+    to_2D=to_Vector2D
+    to_3D=to_Vector3D
+    to_4D=to_Vector4D
+
+    def like(self, other):
+        if not isinstance(other,PlanarAPI):
+            raise TypeError("other must be a numerical LVec vector")
+        from ._coordinates import project
+        return project(self,other._dimension,{})
+
+    def to_numpy(self):
+        """Export a structured NumPy array; to_np retains its dictionary API."""
+        fields=('x','y','z','t')[:self._dimension]
+        values=[np.asarray(c) for c in self._components()]
+        out=np.empty(values[0].shape,dtype=[(n,'f8') for n in fields])
+        for name,value in zip(fields,values):
+            out[name]=value
+        return out
+
 
 class SpatialAPI(PlanarAPI):
     _dimension = 3
@@ -198,6 +249,28 @@ class SpatialAPI(PlanarAPI):
     p2 = property(lambda self: self.mag2)
     pz = property(lambda self: self.z)
     _norm2 = property(lambda self: self.mag2)
+
+    @property
+    def eta(self):
+        # Share LVec's range-aware beam/zero convention without a 4D wrapper.
+        with np.errstate(divide='ignore',invalid='ignore',over='ignore'):
+            rho=self.rho
+            value=np.arcsinh(np.divide(self.z,rho))
+            fallback=np.sign(self.z)*(np.log(abs(self.z))-np.log(rho)+np.log(2.))
+            value=backend_where(np.isinf(value)&np.isfinite(self.z)&(rho>0),fallback,value,self._lib)
+            return backend_where(rho==0,backend_where(self.z==0,0.,backend_where(self.z>0,np.inf,-np.inf,self._lib),self._lib),value,self._lib)
+
+    pseudorapidity=property(lambda self:self.eta)
+
+    @property
+    def costheta(self):
+        with np.errstate(divide='ignore',invalid='ignore'):
+            return np.cos(self.theta)
+
+    @property
+    def cottheta(self):
+        with np.errstate(divide='ignore',invalid='ignore'):
+            return np.divide(self.z,self.rho)
 
 
 class LorentzAPI(SpatialAPI):
@@ -229,3 +302,38 @@ class LorentzAPI(SpatialAPI):
     M = m = property(lambda self: self.mass)
     M2 = m2 = property(lambda self: self.mass2)
     _norm2 = property(lambda self: self.mass2)
+
+    theta=property(lambda self:np.arctan2(self.pt,self.pz))
+    t2=property(lambda self:self.E*self.E)
+    E2=e2=energy2=property(lambda self:self.t2)
+
+    @property
+    def Et(self):
+        with np.errstate(divide='ignore',invalid='ignore'):
+            return self.E*np.sin(self.theta)
+
+    Et2=property(lambda self:self.Et*self.Et)
+    et=transverse_energy=property(lambda self:self.Et)
+    et2=transverse_energy2=property(lambda self:self.Et2)
+
+    @property
+    def Mt2(self):
+        return signed_norm(self.E,self.pz,0.*self.pz,0.*self.pz,squared=True)
+
+    @property
+    def Mt(self):
+        # The signed square-root convention extends transverse mass to
+        # spacelike inputs, matching the invariant-mass convention.
+        return signed_norm(self.E,self.pz,0.*self.pz,0.*self.pz)
+
+    mt=transverse_mass=property(lambda self:self.Mt)
+    mt2=transverse_mass2=property(lambda self:self.Mt2)
+
+    def to_beta3(self):
+        from .vectors import Vec3D
+        with np.errstate(divide='ignore',invalid='ignore'):
+            return Vec3D(*(np.divide(c,self.E) for c in self._components()[:3]))
+
+
+from ._coordinates import install_conversions
+install_conversions(PlanarAPI)

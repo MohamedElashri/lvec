@@ -200,7 +200,9 @@ class LVec(LorentzAPI):
     @classmethod
     def from_vec(cls, vobj):
         """Create from another vector-like object with px, py, pz, E attributes."""
-        return cls(vobj.px, vobj.py, vobj.pz, vobj.E)
+        if all(hasattr(vobj,name) for name in ('px','py','pz','E')):
+            return cls(vobj.px, vobj.py, vobj.pz, vobj.E)
+        return cls(vobj.x, vobj.y, vobj.z, vobj.t)
     
     def clear_cache(self):
         """Clear the computed property cache."""
