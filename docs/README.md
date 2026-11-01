@@ -9,6 +9,7 @@
 7. [Advanced Usage](#advanced-usage)
 8. [Performance Considerations](#performance-considerations)
 9. [Reference Frames](#reference-frames)
+10. [Physics Analysis Helpers](analysis_features.md)
 
 ## Overview
 
