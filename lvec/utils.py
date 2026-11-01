@@ -113,6 +113,27 @@ def check_shapes(*arrays):
     if any(arr.ndim != reference.ndim for arr in arrays[1:]):
         raise ShapeError("Inconsistent nesting depths in Awkward arrays", shapes=shape_info)
 
+    # Ordinary jagged numeric arrays have no option masks or deeper list axes.
+    # Their structure is exactly described by the offsets, independently of
+    # numeric values. Slices may start at different content positions, so equal
+    # per-event lengths also accept shifted offsets and unused content buffers.
+    layouts = [ak.to_layout(arr) for arr in arrays]
+    if all(isinstance(layout, ak.contents.ListOffsetArray)
+           and layout.content.is_numpy and layout.content.data.ndim == 1
+           for layout in layouts):
+        offsets = layouts[0].offsets.data
+        lengths = None
+        for layout in layouts[1:]:
+            other = layout.offsets.data
+            if other is offsets or np.array_equal(offsets, other):
+                continue
+            if lengths is None:
+                lengths = np.diff(offsets)
+            if not np.array_equal(lengths, np.diff(other)):
+                raise ShapeError("Inconsistent inner dimensions in Awkward arrays at axis 1",
+                                 shapes=shape_info)
+        return
+
     def equal_structure(left, right):
         return ak.almost_equal(left, right, rtol=0, atol=0,
                                check_parameters=False, check_regular=False)
