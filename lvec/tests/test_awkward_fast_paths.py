@@ -401,7 +401,10 @@ def test_complex_scaling_remains_rejected(ak, scalar):
 
 
 @pytest.mark.parametrize('scalar', [2, 2., True, np.float32(2), np.float64(2),
-                                   np.longdouble(2), np.int64(2), np.bool_(True)])
+                                   pytest.param(np.longdouble(2), marks=pytest.mark.skipif(
+                                       np.dtype(np.longdouble).itemsize > 8,
+                                       reason='Awkward does not support extended real dtypes')),
+                                   np.int64(2), np.bool_(True)])
 def test_real_scaling_preserves_float64_readonly_snapshots(ak, scalar):
     v = LVec(*(ak.Array([[value]]) for value in (1., 2., 3., 5.)))
     result = v * scalar
