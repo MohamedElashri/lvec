@@ -1,6 +1,6 @@
 # LVec user guide
 
-LVec 0.2.0 provides Lorentz four-vectors and two- and three-dimensional spatial
+LVec provides Lorentz four-vectors and two- and three-dimensional spatial
 vectors for physics analysis. Calculations use NumPy or optional Awkward arrays.
 Angles are radians; momentum, energy, and mass must use consistent units with
 `c=1` and the Minkowski metric `(+,-,-,-)`.
@@ -26,8 +26,9 @@ Angles are radians; momentum, energy, and mass must use consistent units with
 
 ## Installation
 
-Python 3.10+ and NumPy 2.2.4+ are required. Awkward 2.7.4+ is optional; NumPy is
-the only mandatory runtime dependency.
+NumPy is the only mandatory runtime dependency. Awkward support is optional.
+Supported Python versions and dependency constraints are declared in
+[pyproject.toml](pyproject.toml).
 
 | Install | Purpose |
 | --- | --- |
@@ -426,8 +427,9 @@ python -m pytest lvec/tests/test_stress_physics.py -W error
 python -m pytest lvec/tests/test_extreme_invariants.py lvec/tests/test_adaptive_precision.py -W error
 ```
 
-CI checks Python 3.10 with minimum runtime versions, current dependencies on
-Python 3.11–3.14, NumPy-only installations, and wheel/source distributions.
+CI checks the supported Python versions with minimum and current dependencies,
+NumPy-only installations, and wheel/source distributions. The current matrix is
+defined in the [CI workflow](.github/workflows/Build_Package.yml).
 Independent checks use Fraction, integer, and high-precision Decimal oracles;
 physics stress cases cover random transformations, two-body decays, massless
 vectors, nested missing data, numerical extremes, and cache lifecycle.
@@ -463,8 +465,9 @@ python -m twine check dist/*
 ```
 
 The package version in `pyproject.toml` and `lvec.__version__` must agree.
-For version 0.2.0, the release tag is `v0.2.0`. The release workflow checks that
-match, runs tests, builds both distributions, and validates their metadata.
+Release tags use `v` followed by the package version. The release workflow checks
+that the tag and package versions match, runs tests, builds both distributions,
+and validates their metadata.
 Publishing a GitHub release triggers the separate PyPI publishing job using
 Trusted Publishing and the `pypi` environment. A draft release does not trigger
 publication. See the [release workflow](.github/workflows/python-publish.yml),
@@ -473,12 +476,13 @@ and [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/using-a-p
 
 ## Citation
 
+Record `lvec.__version__` with analysis outputs when an exact software version
+is needed.
+
 ```bibtex
 @software{lvec,
   author = {Mohamed Elashri},
   title = {LVec: Lorentz and spatial vectors for physics analysis},
-  version = {0.2.0},
-  year = {2026},
   url = {https://github.com/MohamedElashri/lvec}
 }
 ```

@@ -10,7 +10,8 @@ reference-frame transformations, event reductions, and decay angles.
 
 ## Installation
 
-Requires Python 3.10+ and NumPy 2.2.4+. Jagged arrays require Awkward 2.7.4+.
+NumPy is required; Awkward support is optional. Supported Python and dependency
+versions are declared in [pyproject.toml](https://github.com/MohamedElashri/lvec/blob/main/pyproject.toml).
 
 ```bash
 pip install lvec
