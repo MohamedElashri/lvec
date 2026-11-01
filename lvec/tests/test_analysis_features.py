@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from lvec import LVec, ShapeError
-from lvec.exceptions import InputError
+from lvec.exceptions import BackendError, InputError
 
 
 def test_minkowski_product_and_squared_momenta():
@@ -190,3 +190,44 @@ def test_awkward_reduction_rejects_incomplete_four_vectors(missing_level):
     # also guards the contract when used independently of that implementation.
     with pytest.raises(ShapeError):
         LVec(px, py, px, px).sum(axis=-1)
+
+
+@pytest.mark.parametrize('kind', ['record', 'string', 'bytes', 'complex',
+                                  'record_union', 'string_union'])
+def test_awkward_rejects_nonnumeric_components(kind):
+    ak = pytest.importorskip('awkward')
+    data = {
+        'record': [{'x': 1.}],
+        'string': [['bad'], []],
+        'bytes': [b'bad'],
+        'complex': [1. + 2.j],
+        'record_union': [1., {'x': 2.}],
+        'string_union': [1., 'bad'],
+    }[kind]
+    with pytest.raises(BackendError, match='real numeric values'):
+        LVec(ak.Array(data), 0., 0., 5.)
+
+
+@pytest.mark.parametrize('kind', ['nested_option', 'regular', 'numeric_union',
+                                  'empty', 'all_missing'])
+def test_awkward_accepts_real_component_types(kind):
+    ak = pytest.importorskip('awkward')
+    data = {
+        'nested_option': [[1., None], [], None, [2.]],
+        'regular': np.array([[1, 2], [3, 4]], dtype=np.int64),
+        'numeric_union': [1., [2., None], []],
+        'empty': [[], None, []],
+        'all_missing': [None, None],
+    }[kind]
+    component = ak.Array(data)
+    # Supplying matching arrays avoids changing the union's nesting structure
+    # through broadcasting, and exercises typed empty/all-missing components.
+    from lvec.utils import ensure_array
+    normalized = ensure_array(component, component, component, component)
+    assert normalized[-1] == 'ak'
+    assert ak.to_list(normalized[0]) == ak.to_list(component)
+    if kind != 'numeric_union':
+        # Irreducible unions with mixed nesting depths are accepted by input
+        # normalization but not by every Awkward reducer in older constructors.
+        vector = LVec(component, component, component, component)
+        assert ak.to_list(vector.px) == ak.to_list(component)
