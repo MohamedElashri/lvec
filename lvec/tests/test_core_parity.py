@@ -31,6 +31,8 @@ def test_algebra_and_native_numpy(cls, n):
         np.add(a,b,out=a)
     with pytest.raises(TypeError):
         np.sum(a, dtype=np.float32)
+    with pytest.raises(TypeError,match='dot'):
+        _=a*b
 
 
 @pytest.mark.parametrize('left,right',[(2,3),(3,2),(2,4),(4,2),(3,4),(4,3)])
@@ -48,6 +50,7 @@ def test_component_comparison_nan_and_signed_zero():
     assert np.all(a.isclose(b,equal_nan=True))
     assert not a.allclose(b)
     assert a != 1
+    np.testing.assert_array_equal(Vector2D([np.inf,1.,-np.inf],0.).isclose(Vector2D([-np.inf,np.inf,-np.inf],0.)),[False,False,True])
 
 
 def test_awkward_algebra_and_reduction():
@@ -249,6 +252,10 @@ def test_axis_quaternion_and_general_transforms():
     # Intermediate products overflow, while the exact result is zero.
     extreme=Vector2D(2.,2.).transform2D([[1e308,-1e308],[0.,1.]])
     assert extreme.x==0. and extreme.y==2.
+    tiny=np.nextafter(0.,1.)
+    # Each product rounds to zero; their exact sum is one subnormal quantum.
+    recovered=Vector2D(tiny,tiny).transform2D([[.5,.5],[0.,1.]])
+    assert recovered.x==tiny
     with pytest.raises(ValueError):v.rotate_axis(Vector3D(0.,0.,0.),angle)
     with pytest.raises(ValueError):v.rotate_euler(.1,.2,.3,order='xxx')
     with pytest.raises(TypeError):v.rotate_quaternion(1j,0.,0.,0.)
@@ -264,3 +271,64 @@ def test_per_element_transform_parameters_and_ownership():
     r=Vector3D([1.,2.],0.,0.).transform3D(matrix)
     matrix[:]=0.
     np.testing.assert_array_equal(r.x,[1.,2.])
+
+
+@pytest.mark.parametrize('cls,n',[(Vector2D,2),(Vector3D,3),(LVec,4)])
+def test_native_awkward_record_operations(cls,n):
+    ak=pytest.importorskip('awkward')
+    x=ak.Array([[1.,None],[],None,[2.,0.]])
+    values=[x]+[0.]*(n-1)
+    if n==4:values[-1]=3.
+    v=cls(*values);r=v.to_ak_record(with_behavior=True)
+    assert ak.to_list(r==r)==[[True,None],[],None,[True,True]]
+    assert cls.from_ak_record(r+r).allclose(v+v)
+    assert cls.from_ak_record(r/2).allclose(v/2)
+    assert cls.from_ak_record(ak.sum(r,axis=-1)).allclose(v.sum(axis=-1))
+    assert cls.from_ak_record(ak.sum(v,axis=-1)).allclose(v.sum(axis=-1))
+    assert ak.to_list(ak.count(r,axis=-1))==[1,0,None,2]
+    expected=[1,0,None,2 if n==4 else 1]
+    assert ak.to_list(ak.count_nonzero(r,axis=-1))==expected
+    assert ak.to_list(ak.num(ak.concatenate([v,v]),axis=1))==[2,0,None,2,2,0,None,2]
+    assert cls.from_ak_record(r[0][0].to_ak_record()).allclose(v[0][0])
+    if n==4:
+        assert r.boostX(beta=.2).allclose(v.boostX(beta=.2))
+        assert ak.to_list(r.mass)==ak.to_list(v.mass)
+        nested=ak.zip({'momentum':r,'label':ak.Array([[0,None],[],None,[1,2]])})
+        assert nested.momentum.allclose(r)
+    # A native property calculation must not freeze the caller's offset buffers.
+    _,_,buffers=ak.to_buffers(r)
+    before={k:b.flags.writeable for k,b in buffers.items()}
+    _=abs(r)
+    assert {k:b.flags.writeable for k,b in buffers.items()}==before
+
+
+def test_native_awkward_serialization_registration_and_view_semantics():
+    ak=pytest.importorskip('awkward')
+    import lvec
+    from lvec.awkward import zip as native_zip
+    source=np.array([1.,2.])
+    # Attaching behavior to ordinary Awkward data intentionally keeps its views.
+    lvec.register_awkward()
+    records=ak.zip({'x':source,'y':np.zeros(2)},with_name='LVec2D')
+    np.testing.assert_allclose(records.rho,[1.,2.])
+    assert source.flags.writeable
+    source[:]=[3.,4.]
+    np.testing.assert_allclose(records.rho,[3.,4.])
+    owned=Vector2D.from_ak_record(records)
+    source[:]=0.
+    np.testing.assert_allclose(owned.x,[3.,4.])
+    native=native_zip(dict(pt=ak.Array([[2.],[]]),phi=0.))
+    assert ak.to_list(native.pt)==[[2.],[]]
+    form,length,buffers=ak.to_buffers(native)
+    restored=ak.from_buffers(form,length,buffers)
+    assert restored.allclose(native)
+
+
+def test_keyword_numpy_functions_and_broadcasts():
+    a=Vector2D(np.ones((2,1)),0.)
+    b=Vector2D(np.ones((1,3)),0.)
+    c,d=np.broadcast_arrays(a,b)
+    assert c.shape==d.shape==(2,3)
+    assert np.allclose(a=c,b=d)
+    assert np.sum(a=c).allclose(Vector2D(6.,0.))
+    assert np.all(np.power(c,np.full((2,3),2.))==1.)

@@ -23,6 +23,9 @@ def reference_boost(values, reference, mass, direction=1):
             out=[p+v*coefficient for p,v in zip((px,py,pz),u)]+[g*e+up]
             risk=(g>1e4)
             for result in out:risk=risk|~np.isfinite(result)
+            bounds=[abs(p)+abs(v*coefficient) for p,v in zip((px,py,pz),u)]+[abs(g*e)+abs(up)]
+            for result,bound in zip(out,bounds):
+                risk=risk|((abs(result)<=np.sqrt(np.finfo(float).eps)*bound)&(bound!=0))
             scale=np.maximum.reduce([abs(x) for x in original[:4]])
             risk=risk|((scale>0)&(scale<np.finfo(float).tiny))
             risk=risk|(scale>np.finfo(float).max/(8*np.maximum(g,1)))
@@ -54,6 +57,8 @@ def gamma_axis_boost(values, signed_gamma, axis):
             spatial=g*p+u*e
             energy=g*e+u*p
             risk=(g>1e4)|~np.isfinite(spatial)|~np.isfinite(energy)
+            for result,bound in ((spatial,abs(g*p)+abs(u*e)),(energy,abs(g*e)+abs(u*p))):
+                risk=risk|((abs(result)<=np.sqrt(np.finfo(float).eps)*bound)&(bound!=0))
             risk=risk&np.isfinite(p)&np.isfinite(e)
         spatial,energy=np.asarray(spatial).copy(),np.asarray(energy).copy()
         for i in np.flatnonzero(risk):

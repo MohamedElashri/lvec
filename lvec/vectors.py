@@ -131,6 +131,8 @@ class Vec2D(PlanarAPI):
     
     def __mul__(self, scalar):
         """Multiply by scalar."""
+        if isinstance(scalar,PlanarAPI):
+            raise TypeError("Use dot or @ for vector products")
         return Vec2D(scalar * self.x, scalar * self.y)
     
     __rmul__ = __mul__
@@ -315,6 +317,8 @@ class Vec3D(SpatialAPI):
     
     def __mul__(self, scalar):
         """Multiply by scalar."""
+        if isinstance(scalar,PlanarAPI):
+            raise TypeError("Use dot or @ for vector products")
         return Vec3D(scalar * self.x, scalar * self.y, scalar * self.z)
     
     __rmul__ = __mul__
