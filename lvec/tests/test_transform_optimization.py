@@ -136,3 +136,35 @@ def test_native_cartesian_factory_views_are_live_and_owned_conversion_snapshots(
     assert from_array.allclose(Vector2D(x,0.))
     with pytest.raises(BackendError,match='real numeric'):
         record_zip(dict(x=ak.Array([1.+2.j]),y=0.))
+
+
+@pytest.mark.parametrize('awkward',[False,True])
+@pytest.mark.parametrize('dimension',[2,3,4])
+def test_variable_matrix_coefficients_preserve_exact_recovery_and_masks(awkward,dimension):
+    data=np.random.default_rng(42).normal(size=(dimension,17))
+    data[:,0]=1e308
+    data[:,1]=np.nextafter(0.,1.)
+    data[:,2]=1.
+    coefficients=np.random.default_rng(43).normal(size=(17,dimension,dimension))
+    coefficients[0]=np.eye(dimension)
+    coefficients[1]=np.eye(dimension)*.5
+    coefficients[2]=1.
+    coefficients[2,:,0]=-float(dimension-1)
+    cls={2:Vector2D,3:Vector3D,4:LVec}[dimension]
+    if awkward:
+        ak=pytest.importorskip('awkward')
+        def convert(a):return ak.mask(ak.unflatten(a,[8,0,9]),ak.Array([True,True,False]))
+        source=cls(*(convert(c) for c in data))
+        names='xyzt'[:dimension]
+        matrix={a+b:convert(coefficients[:,i,j]) for i,a in enumerate(names) for j,b in enumerate(names)}
+    else:
+        source=cls(*data)
+        matrix=coefficients
+    with np.errstate(all='raise'):
+        result=getattr(source,f'transform{dimension}D')(matrix)
+    for i,out in enumerate(result._components()):
+        if awkward:
+            assert ak.to_list(ak.is_none(out,axis=0))==[False,False,True]
+            out=ak.to_numpy(ak.flatten(out,axis=None))
+        expected=[reference_dot(data[:,k],coefficients[k,i]) for k in range(len(out))]
+        np.testing.assert_allclose(out,expected,rtol=2e-14,atol=0.)

@@ -521,7 +521,8 @@ class LorentzAPI(SpatialAPI):
                 from .backends import own_computed_structure
                 *values,lib=ensure_array(*components)
                 result=LVec.__new__(LVec)
-                result._px,result._py,result._pz,result._E=map(own_computed_structure,values)
+                buffers={}
+                result._px,result._py,result._pz,result._E=(own_computed_structure(c,buffers) for c in values)
                 result._lib=lib
                 result._initialize_cache()
                 return result
