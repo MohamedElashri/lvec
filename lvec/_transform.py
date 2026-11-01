@@ -15,6 +15,18 @@ def dispatch_parameters(kernel,values,parameters):
             return kernel(*np.broadcast_arrays(*components,*parameters))
         leaf.outputs=kernel.outputs
         return dispatch_owned(leaf,values)
+    if any(is_ak(c) for c in (*values,*parameters)):
+        from ._rotation import dispatch_arrays
+        scalar={i:np.asarray(p) for i,p in enumerate(parameters) if not is_ak(p) and np.ndim(p)==0}
+        variable=tuple(i for i in range(len(parameters)) if i not in scalar)
+        count=len(values)
+        def leaf(*arrays):
+            coords=arrays[:count]
+            params=dict(zip(variable,arrays[count:]))
+            return kernel(*coords,*(np.broadcast_to(scalar[i],coords[0].shape) if i in scalar else params[i]
+                                   for i in range(len(parameters))))
+        leaf.outputs=kernel.outputs
+        return dispatch_arrays(leaf,values,tuple(parameters[i] for i in variable))
     return _dispatch(kernel,*values,*parameters)
 
 
@@ -190,6 +202,14 @@ def transform(values, matrix, dimension):
                 # Nonfinite inputs retain ordinary IEEE multiplication rules.
                 active=[(a,b) for a,b in zip(coords,row)
                         if not (finite and not any(b.strides) and b.size and b.flat[0]==0)]
+                if finite and len(active)<=1:
+                    if active:
+                        a,b=active[0]
+                        value=np.multiply(a,b)
+                        np.copyto(value,0.,where=(a==0)|(b==0))
+                    else:value=np.zeros_like(coords[0])
+                    out.append(value)
+                    continue
                 value=np.asarray(sum((a*b for a,b in active),np.zeros_like(coords[0])))
                 absolute=abs(value)
                 bound=sum(a*b for a,b in zip(bounds,coefficient_bounds[i*dimension:(i+1)*dimension]))
@@ -265,10 +285,8 @@ def euler_transform(values,phi,theta,psi,order):
         if all(math.isfinite(a) for a in angles):
             coefficients=_scalar_euler(order,struct.pack('3d',*angles))
             return _constant_transform(values,coefficients,3),True
-    matrix=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
-    for axis,angle in zip(order[::-1],angles):
-        matrix=multiply(rotation_matrix(axis,-angle),matrix)
-    return transform(values,mapping(matrix),3)
+    from ._rotation import euler
+    return euler(values,angles,order),False
 
 
 @lru_cache(maxsize=128)
@@ -291,12 +309,13 @@ def axis_transform(values,axis,angle):
         parameters=tuple(float(a) for a in (*axis,angle))
         if all(math.isfinite(a) for a in parameters):
             return _constant_transform(values,_scalar_axis(struct.pack('4d',*parameters)),3),True
-    from ._protocol import directions
-    from .backends import backend_any
-    if backend_any((axis[0]==0)&(axis[1]==0)&(axis[2]==0)):
-        raise ValueError('Rotation axis must be nonzero')
-    a=directions(axis)
-    c,s=np.cos(angle),np.sin(angle)
-    skew=((0.,-a[2],a[1]),(a[2],0.,-a[0]),(-a[1],a[0],0.))
-    matrix=[[(c if i==j else 0.)+(1-c)*a[i]*a[j]+s*skew[i][j] for j in range(3)] for i in range(3)]
-    return transform(values,mapping(matrix),3)
+    def validate_axis(x,y,z):
+        if np.any((x==0)&(y==0)&(z==0)):
+            raise ValueError('Rotation axis must be nonzero')
+        return x,y,z
+    validate_axis.outputs=3
+    # Validate independently of the angle: a missing angle must not conceal
+    # an invalid zero direction. Traverse its matching leaves only once.
+    dispatch_owned(validate_axis,axis)
+    from ._rotation import axis as rotate
+    return rotate(values,(*axis,angle)),False

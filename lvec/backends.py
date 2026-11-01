@@ -295,7 +295,7 @@ def own_plain_components(*components):
     return tuple(freeze_array(ak.Array(layout)) for layout in copy_columns(layouts))
 
 
-def own_computed_structure(value):
+def own_computed_structure(value, structural_buffers=None):
     """Own computed Awkward metadata, retaining proven-owned numeric leaves.
 
     Internal producers may reuse immutable input leaves or fresh arithmetic
@@ -304,8 +304,16 @@ def own_computed_structure(value):
     constructor inputs or arbitrary external views.
     """
     form,length,buffers=ak.to_buffers(value,buffer_key='{form_key}-{attribute}')
-    owned={key:buffer if key.endswith('-data') else buffer.copy()
-           for key,buffer in buffers.items()}
+    if structural_buffers is None:structural_buffers={}
+    owned={}
+    for key,buffer in buffers.items():
+        if key.endswith('-data'):
+            owned[key]=buffer
+        else:
+            identity=id(buffer)
+            if identity not in structural_buffers:
+                structural_buffers[identity]=(buffer,buffer.copy())
+            owned[key]=structural_buffers[identity][1]
     return freeze_array(ak.from_buffers(form,length,owned))
 
 
