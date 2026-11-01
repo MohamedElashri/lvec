@@ -475,6 +475,60 @@ class LorentzAPI(SpatialAPI):
         tol=_tolerance(tolerance)
         return backend_where(tol==0,self.mass==0,abs(self.mass2)<tol,self._lib)
 
+    def boost_beta3(self,beta3):
+        if not isinstance(beta3,SpatialAPI) or beta3._dimension!=3:
+            raise TypeError("beta3 must be a 3D velocity vector")
+        return self.boost(beta3.x,beta3.y,beta3.z)
+
+    def _boost_p4(self,p4,direction):
+        from ._boost import reference_boost
+        from .exceptions import InputError
+        if not isinstance(p4,LorentzAPI):
+            raise TypeError("p4 must be a Lorentz vector")
+        mass=p4.mass
+        invalid=(p4.E<=0)|(mass<=0)|~np.isfinite(mass)
+        for c in p4._components():invalid=invalid|~np.isfinite(c)
+        if backend_any(invalid):
+            raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
+        return self._new(*reference_boost(self._components(),p4._components(),mass,direction))
+
+    def boost_p4(self,p4):
+        """Active boost from a future timelike p4, without converting to beta."""
+        return self._boost_p4(p4,1)
+
+    def boostCM_of_p4(self,p4):
+        return self._boost_p4(p4,-1)
+
+    def boostCM_of_beta3(self,beta3):
+        return self.boost_beta3(-beta3)
+
+    def boostCM_of(self,booster):
+        return self.boostCM_of_p4(booster) if isinstance(booster,LorentzAPI) else self.boostCM_of_beta3(booster)
+
+    def _boost_axis(self,axis,beta,gamma):
+        from ._boost import gamma_axis_boost
+        from .exceptions import InputError
+        if (beta is None)==(gamma is None):
+            raise TypeError("Specify exactly one of beta or gamma")
+        if gamma is None:
+            values=[0.,0.,0.];values[axis]=beta
+            return self.boost(*values)
+        from .backends import normalize_scalar
+        from .utils import ensure_array
+        gamma=ensure_array(normalize_scalar(gamma))[0]
+        if backend_any(~np.isfinite(gamma)|(abs(gamma)<1)):
+            raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
+        return self._new(*gamma_axis_boost(self._components(),gamma,axis))
+
+    def boostX(self,beta=None,gamma=None):
+        return self._boost_axis(0,beta,gamma)
+
+    def boostY(self,beta=None,gamma=None):
+        return self._boost_axis(1,beta,gamma)
+
+    def boostZ(self,beta=None,gamma=None):
+        return self._boost_axis(2,beta,gamma)
+
 
 from ._coordinates import install_conversions
 install_conversions(PlanarAPI)
