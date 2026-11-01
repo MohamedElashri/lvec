@@ -7,51 +7,56 @@ from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
 from .exceptions import ShapeError, BackendError
 
 def ensure_array(*args):
-    """
-    Convert inputs to consistent array type.
-    
-    For Awkward arrays, this function will ensure that not only the outer dimensions 
-    match, but also that any jagged (variable-length) inner dimensions are consistent
-    when used in vectorized operations.
-    
-    Returns:
-        tuple: Contains the input arrays converted to a consistent type,
-               followed by the backend library indicator ('np' or 'ak')
+    """Normalize components, broadcasting scalars to a common array structure.
+
+    Non-scalar component arrays must have identical shapes and nested structure.
+    Length-one arrays are arrays, not scalars, and are never expanded implicitly.
+    Python/NumPy scalars and zero-dimensional NumPy arrays are broadcast to the
+    shape of the array components. Awkward missing values propagate to scalars.
     """
     try:
-        # Check for None values first
         if any(x is None for x in args):
             raise ValueError("Cannot process None values")
-            
-        # Determine if we need to use Awkward
+
+        def is_scalar(value):
+            return np.isscalar(value) or (
+                isinstance(value, np.ndarray) and value.ndim == 0
+            )
+
+        # Reject strings, dictionaries, complex and object arrays before shape
+        # validation or arithmetic, with one consistent initialization error.
+        for arg in args:
+            if not is_ak(arg) and np.asarray(arg).dtype.kind not in 'biuf':
+                raise TypeError("Vector components must contain real numeric values")
         use_ak = any(is_ak(arg) for arg in args)
-        
+        scalars = [is_scalar(arg) for arg in args]
+        if all(scalars):
+            return (*[np.asarray(arg).item() for arg in args], 'np')
+
         if use_ak:
-            # Convert all inputs to Awkward arrays
-            arrays = [to_ak(arg) for arg in args]
-            lib = 'ak'
-        else:
-            # For NumPy backend:
-            # If all inputs are scalars, keep them as scalars
-            all_scalars = all(isinstance(arg, (float, int)) for arg in args)
-            
-            if all_scalars:
-                arrays = list(args)  # Keep scalars as they are
-            else:
-                # Mixed scalar/array inputs or all arrays
-                arrays = []
-                for arg in args:
-                    if isinstance(arg, (float, int)):
-                        # Convert scalar to array if mixed with arrays
-                        arrays.append(to_np(arg))
-                    else:
-                        arrays.append(to_np(arg))
-            lib = 'np'
-            
-        return (*arrays, lib)
+            import awkward as ak
+            values = [np.asarray(arg).item() if scalar else to_ak(arg)
+                      for arg, scalar in zip(args, scalars)]
+            check_shapes(*[arg for arg, scalar in zip(values, scalars)
+                           if not scalar], 'ak')
+            # Only scalar values are allowed to expand. Existing array shapes
+            # were checked above, so broadcasting cannot change particle counts.
+            arrays = ak.broadcast_arrays(*values) if any(scalars) else values
+            return (*arrays, 'ak')
+
+        arrays = [np.asarray(arg) for arg in args]
+        non_scalars = [arg for arg, scalar in zip(arrays, scalars) if not scalar]
+        check_shapes(*non_scalars, 'np')
+        shape = non_scalars[0].shape
+        arrays = [np.broadcast_to(arg, shape) if scalar else arg
+                  for arg, scalar in zip(arrays, scalars)]
+        return (*arrays, 'np')
+    except ShapeError:
+        raise
     except Exception as e:
-        raise BackendError("initialization", "unknown", str(e))
+        raise BackendError("initialization", "unknown", str(e)) from e
     
+
 def check_shapes(*arrays):
     """
     Verify all arrays have consistent shapes.

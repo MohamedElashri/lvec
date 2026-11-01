@@ -59,7 +59,13 @@ def backend_where(condition, x, y, lib):
     """
     if lib == 'ak' and HAS_AWKWARD:
         import awkward as ak
-        return ak.where(condition, x, y)
+        result = ak.where(condition, x, y)
+        # ak.where can move option types inside lists. Restore missing lists at
+        # each depth so a missing event never turns into a list of missing items.
+        if is_ak(condition):
+            for axis in range(condition.ndim):
+                result = ak.mask(result, ~ak.is_none(condition, axis=axis))
+        return result
     else:
         return np.where(condition, x, y)
         
