@@ -10,49 +10,62 @@ permissions:
 jobs:
   release-build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          ref: ${{ github.event.release.tag_name }}
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-
-      - name: Build release distributions
+          python-version: "3.13"
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
-          python -m build
+          python - <<'PY'
+          import ast
+          import os
+          from pathlib import Path
+          import tomllib
 
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          module = ast.parse(Path("lvec/__init__.py").read_text())
+          assignment = next(node for node in module.body if isinstance(node, ast.Assign)
+                            and any(isinstance(target, ast.Name) and target.id == "__version__"
+                                    for target in node.targets))
+          runtime_version = ast.literal_eval(assignment.value)
+          if runtime_version != version or os.environ["RELEASE_TAG"] != f"v{version}":
+              raise SystemExit("Release tag, project version, and runtime version must agree")
+          print(f"Verified release v{version}")
+          PY
+      - name: Install release verification tools
+        run: python -m pip install ".[awkward,test]" build twine
+      - name: Run tests
+        run: python -m pytest -W error::RuntimeWarning
+      - name: Build and check release distributions
+        run: |
+          python -m build
+          python -m twine check dist/*
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
           path: dist/
+          if-no-files-found: error
 
   pypi-publish:
     runs-on: ubuntu-latest
-    needs:
-      - release-build
+    needs: release-build
     permissions:
       id-token: write
-
     environment:
       name: pypi
-      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      # url: https://pypi.org/p/YOURPROJECT
-      #
-      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
-      # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
-
+      url: https://pypi.org/project/lvec/
     steps:
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
         with:
           name: release-dists
           path: dist/
-
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
