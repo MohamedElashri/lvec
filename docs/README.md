@@ -10,6 +10,7 @@
 8. [Performance Considerations](#performance-considerations)
 9. [Reference Frames](#reference-frames)
 10. [Physics Analysis Helpers](analysis_features.md)
+11. [Stress Testing and Precision Limits](#stress-testing-and-precision-limits)
 
 ## Overview
 
@@ -952,3 +953,61 @@ Internal NumPy arithmetic reuses freshly allocated results and existing owned
 read-only components instead of snapshotting them again. Public constructors
 continue to snapshot external inputs; this private optimization does not expose
 a borrowed mutable-input mode.
+
+### Stress testing and precision limits
+
+Run the deterministic physics and cache-lifecycle stress cases with:
+
+```bash
+python -m pytest lvec/tests/test_stress_physics.py -W error
+```
+
+The suite checks 60,000 random boost/rotation/frame cases, 20,000 two-body
+decays, 10,000 massless vectors, decimal boost references near light speed,
+scales from 1e-200 to 1e200, collimated angles, nested missing values, and
+bounded-cache churn. Comparisons normalize by component scales and use
+condition-appropriate absolute tolerances for nearly null momenta.
+
+For process-isolated runtime and memory scaling, run:
+
+```bash
+PYTHONPATH=. python benchmarks/stress_lvec.py \
+    --sizes 1000 10000 100000 1000000 --repeats 5 > stress-results.jsonl
+```
+
+This covers contiguous and strided NumPy arrays, photons, jagged collections,
+missing events/particles, deeply nested lists, and heavy-tailed multiplicities.
+Missing/deep/heavy-tail cases stop at 100,000 events to bound memory usage.
+JSON rows distinguish construction, cold/hot properties, complete workflows,
+and reductions; cache buffers, traced property allocations, and process peak
+RSS are separate measurements. Run the same script with `PYTHONPATH` pointing
+at another checkout to compare versions. Timings are measurements, not CI
+pass/fail thresholds. A failed worker makes the script exit unsuccessfully.
+The [recorded stress report](../benchmarks/results/stress-2026-11-01.json)
+contains environments, baseline comparisons, test counts, and the known limit.
+
+Construction checks component structure once; immutable components let
+reductions reuse that guarantee. Awkward conditional calculations restore
+missing-list masks only at optional list levels, avoiding artificial option
+buffers for ordinary arrays. Numerical fast paths retain square/sum kernels
+for normal NumPy magnitudes and use scaled/hypot fallbacks outside their range.
+
+Magnitudes and physical classification avoid overflowing or underflowing
+intermediate squares. The coordinate constructor computes energy using hypot,
+and pseudorapidity has a logarithmic fallback for overflowing pz/pt. Opening and
+helicity angles use atan2 of the cross-product magnitude and scalar product,
+retaining small collinear angles that arccos would round to zero.
+Dot products use an exponent-scaled fallback when direct finite-component
+products overflow, including cancellation of very large null momenta.
+
+Float64 still limits squared observables: an unrepresentable `mass2`, `pt2`,
+or `p2` can be infinite or zero even when its square root is representable.
+Near-lightlike invariant masses suffer cancellation; boosts and inverse boosts
+become ill-conditioned as beta approaches one. Precision lost in supplied
+energy/momentum components cannot be recovered by these methods. Extremely
+hierarchical components can also lose small terms in normalized intermediate
+arithmetic. An explicit expected-failure test records
+`LVec(1e200, 1, 0, 1e200).mass2`: the exact invariant is -1, while the current
+implementation returns zero. This case requires a compensated product-sum or
+higher-precision kernel; it is not counted as a passing physics check. The
+package does not provide arbitrary-precision arithmetic.
