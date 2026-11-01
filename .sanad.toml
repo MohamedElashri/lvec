@@ -1,0 +1,7 @@
+version = 1
+
+[native]
+enabled = true
+
+[update]
+level = "minor"
