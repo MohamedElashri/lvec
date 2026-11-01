@@ -1,4 +1,7 @@
 """Small Cartesian transforms with exact recovery of risky dot products."""
+import math
+import struct
+from functools import lru_cache
 import numpy as np
 from ._adaptive import _dispatch
 from ._exact import accurate_result
@@ -17,7 +20,8 @@ def dispatch_parameters(kernel,values,parameters):
 
 def dispatch_owned(kernel,values):
     """Traverse validated matching components once, without pre-broadcasting."""
-    if not any(is_ak(v) for v in values):return _dispatch(kernel,*values)
+    if not any(is_ak(v) for v in values):
+        return kernel(*(np.asarray(v) for v in values))
     import awkward as ak
     def apply(layouts,**kwargs):
         if all(layout.is_numpy for layout in layouts):
@@ -30,7 +34,8 @@ def dispatch_owned(kernel,values):
 def _bound(array):
     if not array.size:return 0.
     if not any(array.strides):return abs(float(array.flat[0]))
-    return float(np.max(abs(array),initial=0.))
+    return max(abs(float(np.max(array,initial=-np.inf))),
+               abs(float(np.min(array,initial=np.inf))))
 
 
 def normalize(values,dimension):
@@ -66,6 +71,8 @@ def scale(values,dimension,factor):
 
 
 def real_parameter(value):
+    if isinstance(value,(float,int)):
+        return float(value)
     if is_ak(value):
         import awkward as ak
         # Constructors validate the leaf types without flattening the data.
@@ -78,15 +85,97 @@ def real_parameter(value):
     return value.astype(np.float64,copy=False)
 
 
+_RTOL=math.sqrt(np.finfo(float).eps)
+_TINY=np.finfo(float).tiny
+_BLOCK=65536
+
+
+def _scalar_row(coords,row):
+    """Small-input dot product with the same finite cancellation contract."""
+    products=[a*b for a,b in zip(coords,row)]
+    value=sum(products)
+    bound=sum(abs(p) for p in products)
+    if (not math.isfinite(value) or abs(value)<=_RTOL*bound or abs(value)<_TINY):
+        if all(math.isfinite(c) for c in (*coords,*row)):
+            possible=any(a!=0 and b!=0 for a,b in zip(coords,row))
+            if not math.isfinite(value) or (bound!=0 and abs(value)<=_RTOL*bound) or (abs(value)<_TINY and possible):
+                from ._exact import _product_sum, _rounded_float
+                pad=4-len(row)
+                left=(*coords,*(0.,)*pad)
+                right=(*row,*(0.,)*pad)
+                signed=(-right[0],-right[1],-right[2],right[3])
+                integer,power=_product_sum((*left,*signed),dot=True)
+                return _rounded_float(integer,power)
+    return value
+
+
+def _constant_transform(values,coefficients,dimension):
+    """Evaluate constant matrices without broadcasting coefficients into leaves."""
+    rows=tuple(tuple(coefficients[i*dimension:(i+1)*dimension]) for i in range(dimension))
+    def kernel(*coords):
+        shape=coords[0].shape
+        size=coords[0].size
+        out=[np.empty(shape,dtype=np.float64) for _ in range(dimension)]
+        if size<=8:
+            for index in range(size):
+                point=tuple(float(c.flat[index]) for c in coords[:dimension])
+                for result,row in zip(out,rows):result.flat[index]=_scalar_row(point,row)
+            return tuple(out)+tuple(coords[dimension:])
+        # Blocks keep products, result checks and exceptional masks in cache.
+        flat=tuple(c.reshape(-1) for c in coords[:dimension])
+        outputs=tuple(c.reshape(-1) for c in out)
+        with np.errstate(over='ignore',under='ignore',invalid='ignore'):
+            for start in range(0,size,_BLOCK):
+                stop=min(size,start+_BLOCK)
+                columns=tuple(c[start:stop] for c in flat)
+                bounds=tuple(_bound(c) for c in columns)
+                finite=all(math.isfinite(b) for b in (*bounds,*coefficients))
+                scratch=np.empty(stop-start)
+                for output,row in zip(outputs,rows):
+                    target=output[start:stop]
+                    active=tuple((c,f) for c,f in zip(columns,row) if not (finite and f==0))
+                    if finite and len(active)<=1:
+                        if not active:
+                            target.fill(0.)
+                        else:
+                            column,factor=active[0]
+                            np.multiply(column,factor,out=target)
+                            # Addition to the original +0 accumulator maps
+                            # exact zero products to +0, but subnormal negative
+                            # products must retain their correctly rounded sign.
+                            np.copyto(target,0.,where=column==0)
+                        continue
+                    target.fill(0.)
+                    for c,factor in active:
+                        np.multiply(c,factor,out=scratch)
+                        np.add(target,scratch,out=target)
+                    bound=sum(b*abs(f) for b,f in zip(bounds,row))
+                    absolute=abs(target)
+                    threshold=_RTOL*bound
+                    safe_range=finite and bound<np.finfo(float).max/8
+                    if np.min(absolute,initial=np.inf)>max(_TINY,threshold) and (safe_range or np.max(absolute,initial=0.)<np.inf):
+                        continue
+                    coarse=~np.isfinite(target)|(absolute<=threshold)|(absolute<_TINY)
+                    selected=tuple(c[coarse] for c in columns)
+                    for local,index in enumerate(np.flatnonzero(coarse)):
+                        point=tuple(float(c[local]) for c in selected)
+                        target[index]=_scalar_row(point,row)
+        return tuple(out)+tuple(coords[dimension:])
+    kernel.outputs=len(values)
+    return dispatch_owned(kernel,values)
+
+
 def transform(values, matrix, dimension):
     names='xyzt'[:dimension]
     if isinstance(matrix,dict):
         coefficients=[real_parameter(matrix[a+b]) for a in names for b in names]
     else:
         matrix=real_parameter(matrix)
-        if matrix.shape[-2:]!=(dimension,dimension):
+        if not isinstance(matrix,np.ndarray) or matrix.shape[-2:]!=(dimension,dimension):
             raise ValueError(f"Expected a (...,{dimension},{dimension}) matrix")
         coefficients=[matrix[...,i,j] for i in range(dimension) for j in range(dimension)]
+    if all(isinstance(c,float) or (isinstance(c,np.ndarray) and c.ndim==0) for c in coefficients):
+        return _constant_transform(values,tuple(float(c) for c in coefficients),dimension),True
     count=len(values)
     def kernel(*arrays):
         coords=arrays[:count];coeffs=arrays[count:]
@@ -148,3 +237,66 @@ def multiply(left,right):
 
 def mapping(matrix):
     return {a+b:matrix[i][j] for i,a in enumerate('xyz') for j,b in enumerate('xyz')}
+
+
+_EULER_ORDERS=frozenset(('zxz','xyx','yzy','zyz','xzx','yxy','xzy','xyz','yxz','yzx','zyx','zxy'))
+
+
+@lru_cache(maxsize=128)
+def _scalar_euler(order,key):
+    # The bit-preserving key distinguishes +0 and -0. Only immutable finite
+    # scalar parameters are cached; mutable array parameters never enter here.
+    angles=struct.unpack('3d',key)
+    matrix=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
+    for axis,angle in zip(order[::-1],angles):
+        c,s=math.cos(-angle),math.sin(-angle)
+        i,j={'x':(1,2),'y':(2,0),'z':(0,1)}[axis]
+        a,b=matrix[i],matrix[j]
+        matrix[i]=[c*x-s*y for x,y in zip(a,b)]
+        matrix[j]=[s*x+c*y for x,y in zip(a,b)]
+    return tuple(c for row in matrix for c in row)
+
+
+def euler_transform(values,phi,theta,psi,order):
+    if order not in _EULER_ORDERS:raise ValueError('Unsupported Euler rotation order')
+    angles=tuple(real_parameter(a) for a in (phi,theta,psi))
+    if all(isinstance(a,float) or (isinstance(a,np.ndarray) and a.ndim==0) for a in angles):
+        angles=tuple(float(a) for a in angles)
+        if all(math.isfinite(a) for a in angles):
+            coefficients=_scalar_euler(order,struct.pack('3d',*angles))
+            return _constant_transform(values,coefficients,3),True
+    matrix=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
+    for axis,angle in zip(order[::-1],angles):
+        matrix=multiply(rotation_matrix(axis,-angle),matrix)
+    return transform(values,mapping(matrix),3)
+
+
+@lru_cache(maxsize=128)
+def _scalar_axis(key):
+    x,y,z,angle=struct.unpack('4d',key)
+    scale=max(abs(x),abs(y),abs(z))
+    if scale==0:raise ValueError('Rotation axis must be nonzero')
+    axis=(x/scale,y/scale,z/scale)
+    norm=math.hypot(*axis)
+    a=tuple(c/norm for c in axis)
+    c,s=math.cos(angle),math.sin(angle)
+    skew=((0.,-a[2],a[1]),(a[2],0.,-a[0]),(-a[1],a[0],0.))
+    return tuple((c if i==j else 0.)+(1-c)*a[i]*a[j]+s*skew[i][j]
+                 for i in range(3) for j in range(3))
+
+
+def axis_transform(values,axis,angle):
+    angle=real_parameter(angle)
+    if all(isinstance(a,float) or (isinstance(a,np.ndarray) and a.ndim==0) for a in (*axis,angle)):
+        parameters=tuple(float(a) for a in (*axis,angle))
+        if all(math.isfinite(a) for a in parameters):
+            return _constant_transform(values,_scalar_axis(struct.pack('4d',*parameters)),3),True
+    from ._protocol import directions
+    from .backends import backend_any
+    if backend_any((axis[0]==0)&(axis[1]==0)&(axis[2]==0)):
+        raise ValueError('Rotation axis must be nonzero')
+    a=directions(axis)
+    c,s=np.cos(angle),np.sin(angle)
+    skew=((0.,-a[2],a[1]),(a[2],0.,-a[0]),(-a[1],a[0],0.))
+    matrix=[[(c if i==j else 0.)+(1-c)*a[i]*a[j]+s*skew[i][j] for j in range(3)] for i in range(3)]
+    return transform(values,mapping(matrix),3)

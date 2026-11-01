@@ -10,6 +10,25 @@ from ._exact import accurate_result
 
 _CANCELLATION_RTOL = math.sqrt(np.finfo(np.float64).eps)
 
+
+def small_invariant(px,py,pz,energy,*,squared=False):
+    """Avoid array-kernel setup for scalar and very short owned float64 data."""
+    from ._exact import _product_sum,_rounded_float
+    tiny=np.finfo(float).tiny
+    def evaluate(x,y,z,e):
+        value=e*e-(x*x+y*y+z*z)
+        bound=(_CANCELLATION_RTOL*abs(e))*abs(e)
+        if (not math.isfinite(value) or abs(value)<=bound or abs(value)<tiny) and all(math.isfinite(c) for c in (x,y,z,e)):
+            integer,power=_product_sum((x,y,z,e))
+            return _rounded_float(integer,power,root=not squared)
+        if squared:return value
+        return -math.sqrt(-value) if value<0 else math.sqrt(value)
+    if not isinstance(energy,np.ndarray):return evaluate(px,py,pz,energy)
+    result=np.empty(energy.shape,dtype=np.float64)
+    for index in range(energy.size):
+        result.flat[index]=evaluate(*(float(c.flat[index]) for c in (px,py,pz,energy)))
+    return result
+
 def ensure_array(*args):
     """Normalize components, broadcasting scalars to a common array structure.
 
