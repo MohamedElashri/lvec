@@ -17,6 +17,7 @@ event data. NumPy is the only required runtime dependency. Awkward support is
 optional. Selected examples demonstrate ROOT I/O with uproot and plotting.
 
 [User guide](https://github.com/MohamedElashri/lvec/blob/main/user-guide.md)
+· [Migrating from vector](https://github.com/MohamedElashri/lvec/blob/main/docs/vector-migration.md)
 · [Benchmarks](https://github.com/MohamedElashri/lvec/blob/main/benchmarks/README.md)
 · [Examples](https://github.com/MohamedElashri/lvec/tree/main/examples)
 · [Citation](#citation)
@@ -25,11 +26,12 @@ optional. Selected examples demonstrate ROOT I/O with uproot and plotting.
 
 | Area | Supported operations |
 | --- | --- |
-| Four-momenta | Cartesian and pt–eta–phi–mass construction; arithmetic; invariant mass; Minkowski products |
-| Event collections | NumPy and jagged Awkward arrays; matching missing-value structures; event-wise and total reductions |
-| Transformations | Lorentz boosts, spatial rotations, rest frames, and transformations between reference frames |
-| Analysis observables | Rapidity, beta/gamma, angular separation, opening angles, and helicity angles |
-| Spatial vectors | Two- and three-dimensional vectors through `Vector2D` and `Vector3D` |
+| Coordinates | All 20 Cartesian/polar coordinate families across 2D/3D/4D; momentum aliases; projections and embeddings |
+| Algebra | Arithmetic, Euclidean/Minkowski products, unit vectors, comparisons, and direction/causal predicates |
+| Event collections | NumPy and jagged Awkward arrays; event-wise/total reductions; optional native record behavior |
+| Transformations | Beta/p4/gamma Lorentz boosts; arbitrary-axis, Euler and quaternion rotations; general matrices; named frames |
+| Analysis observables | Invariant and transverse mass, transverse energy, rapidity, beta/gamma, angular distances, and helicity angles |
+| Spatial vectors | Complete numerical 2D/3D geometry through `Vector2D` and `Vector3D` |
 | Derived properties | Cached results with optional size limits, TTLs, statistics, and intermediate retention |
 
 ## Installation
@@ -149,9 +151,11 @@ observed dispersion; they describe particular workloads on one machine.
 
 ## Development
 
-The [feature parity audit](docs/vector-feature-parity.md) compares the public
+The [feature parity audit](https://github.com/MohamedElashri/lvec/blob/main/docs/vector-feature-parity.md) compares the public
 mathematical capabilities of Scikit-HEP `vector` with LVec, records semantic
-differences, and defines a sequential roadmap toward core numerical parity.
+differences, and identifies the numerical core implemented by LVec. The
+[migration guide](https://github.com/MohamedElashri/lvec/blob/main/docs/vector-migration.md) explains familiar constructors,
+array operations, scientific policies, and performance paths.
 
 ```bash
 python -m pip install -e ".[awkward,test,benchmark]"
