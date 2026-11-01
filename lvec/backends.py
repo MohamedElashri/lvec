@@ -62,9 +62,23 @@ def backend_where(condition, x, y, lib):
         import awkward as ak
         result = ak.where(condition, x, y)
         # ak.where may turn a missing list into a list containing None.
-        # Restore option masks at every depth of an Awkward condition.
+        # Restore only existing optional LIST axes. Masking every axis also
+        # wraps ordinary arrays in unnecessary option buffers and makes large
+        # eta/rapidity calculations retain much more memory than their inputs.
         if is_ak(condition):
-            for axis in range(condition.ndim):
+            axes = set()
+            pending = [(ak.type(condition).content, 0)]
+            while pending:
+                array_type, axis = pending.pop()
+                if isinstance(array_type, ak.types.OptionType):
+                    if axis < condition.ndim - 1:
+                        axes.add(axis)
+                    pending.append((array_type.content, axis))
+                elif isinstance(array_type, (ak.types.ListType, ak.types.RegularType)):
+                    pending.append((array_type.content, axis + 1))
+                elif isinstance(array_type, ak.types.UnionType):
+                    pending.extend((content, axis) for content in array_type.contents)
+            for axis in sorted(axes):
                 result = ak.mask(result, ~ak.is_none(condition, axis=axis))
         return result
     else:
@@ -164,7 +178,25 @@ def backend_any(value):
     return bool(ak.any(value, axis=None)) if is_ak(value) else bool(np.any(value))
 
 
-def validate_beta(bx, by, bz):
+def beta_delta(bx, by, bz):
+    """Recover 1-beta² only near the light-speed boundary."""
+    b2 = bx*bx + by*by + bz*bz
+    delta = 1.0-b2
+    risk = delta <= np.sqrt(np.finfo(float).eps)
+    if backend_any(risk):
+        from ._exact import accurate_result
+        lib = 'ak' if any(is_ak(x) for x in (bx, by, bz)) else 'np'
+        if lib == 'ak':
+            exact = accurate_result((bx, by, bz, 1.0), lib, where=risk)
+            delta = backend_where(risk, exact, delta, lib)
+        else:
+            arrays = np.broadcast_arrays(bx, by, bz, 1.0)
+            delta = np.array(delta, copy=True)
+            delta[risk] = accurate_result(tuple(x[risk] for x in arrays), lib)
+    return b2, delta
+
+
+def validate_beta(bx, by, bz, *, return_delta=False):
     """Return beta² after checking finite components and |beta| < 1."""
     if backend_any(~np.isfinite(bx) | ~np.isfinite(by) | ~np.isfinite(bz)):
         raise InputError("boost velocity", "non-finite", "Components must be finite")
@@ -174,10 +206,10 @@ def validate_beta(bx, by, bz):
     expected = "Must be < 1 (speed of light)" if scalar else "All values must be < 1 (speed of light)"
     if backend_any(invalid_component):
         raise InputError("boost velocity", "magnitude", expected)
-    b2 = bx*bx + by*by + bz*bz
-    if backend_any(b2 >= 1):
+    b2, delta = beta_delta(bx, by, bz)
+    if backend_any(delta <= 0):
         raise InputError("boost velocity", "magnitude", expected)
-    return b2
+    return (b2, delta) if return_delta else b2
 
 
 def freeze_array(value):

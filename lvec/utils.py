@@ -1,10 +1,14 @@
 # utils.py
+import math
 import numpy as np
 from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_sin, backend_cos, backend_atan2,
                       backend_sinh, backend_cosh, backend_log,
-                      backend_where)
+                      backend_where, backend_any)
 from .exceptions import ShapeError, BackendError
+from ._exact import accurate_result
+
+_CANCELLATION_RTOL = math.sqrt(np.finfo(np.float64).eps)
 
 def ensure_array(*args):
     """Normalize components, broadcasting scalars to a common array structure.
@@ -128,6 +132,151 @@ def check_shapes(*arrays):
         raise ShapeError("Incompatible nesting structure in Awkward arrays", shapes=shape_info) from exc
 
 
+def scaled_invariant(E, px, py, pz, lib):
+    """Return a component scale and dimensionless Minkowski norm squared."""
+    scale = np.maximum(np.maximum(abs(E), abs(px)), np.maximum(abs(py), abs(pz)))
+    denominator = backend_where(scale == 0, 1., scale, lib)
+    e, x, y, z = (value / denominator for value in (E, px, py, pz))
+    return scale, e*e - x*x - y*y - z*z
+
+
+def _null_axis(E, px, py, pz):
+    """Prove an entire batch is exactly null along one coordinate axis."""
+    if backend_any(~np.isfinite(E)):
+        return None
+    momentum = (px, py, pz)
+    for axis in range(3):
+        others = [momentum[i] for i in range(3) if i != axis]
+        if (not backend_any(others[0] != 0) and not backend_any(others[1] != 0)
+                and not backend_any(abs(E) != abs(momentum[axis]))):
+            return axis
+    return None
+
+
+def _bounds(value):
+    if is_ak(value):
+        import awkward as ak
+        return (ak.min(value, axis=None, mask_identity=False),
+                ak.max(value, axis=None, mask_identity=False))
+    if isinstance(value, np.ndarray):
+        return value.min(initial=np.inf), value.max(initial=-np.inf)
+    return value, value
+
+
+def dot_result(result, left, right, lib):
+    """Correct overflow and cancellation without discarding small products."""
+    if np.isscalar(result):
+        left_scale, right_scale = max(map(abs, left)), max(map(abs, right))
+    else:
+        left_scale = np.maximum(np.maximum(abs(left[0]), abs(left[1])),
+                                np.maximum(abs(left[2]), abs(left[3])))
+        right_scale = np.maximum(np.maximum(abs(right[0]), abs(right[1])),
+                                 np.maximum(abs(right[2]), abs(right[3])))
+    bound = (_CANCELLATION_RTOL*left_scale)*right_scale
+    exceptional = ~np.isfinite(result) | (abs(result) <= bound)
+    if not backend_any(exceptional):
+        return result
+    axis = _null_axis(left[3], *left[:3])
+    if axis is not None and _null_axis(right[3], *right[:3]) == axis:
+        if not backend_any(np.sign(left[3])*np.sign(right[3])
+                           != np.sign(left[axis])*np.sign(right[axis])):
+            return np.zeros_like(result)
+    if isinstance(result, np.ndarray):
+        values = np.broadcast_arrays(*(left + right))
+        left, right = values[:4], values[4:]
+        left = tuple(value[exceptional] for value in left)
+        right = tuple(value[exceptional] for value in right)
+    with np.errstate(over='ignore', under='ignore', divide='ignore', invalid='ignore'):
+        finite = True
+        for values in (left, right):
+            for value in values:
+                finite = finite & np.isfinite(value)
+        mask = None if isinstance(result, np.ndarray) else exceptional & finite
+        fallback = accurate_result((*left, *right), lib, dot=True, where=mask)
+        if isinstance(result, np.ndarray):
+            result[exceptional] = np.where(finite, fallback, result[exceptional])
+            return result
+        return backend_where(exceptional & finite, fallback, result, lib)
+
+
+def euclidean_result(squared, *components):
+    """Keep NumPy's fast square/sum path, using hypot only outside its range."""
+    tiny = np.finfo(np.float64).tiny
+    lower, upper = squared.min(initial=np.inf), squared.max(initial=-np.inf)
+    regular = lower >= tiny and np.isfinite(upper)
+    exceptional = None if regular else (~np.isfinite(squared) | (squared < tiny))
+    # An opted-in cached intermediate is read-only and must remain squared.
+    result = np.sqrt(squared, out=squared if squared.flags.writeable else None)
+    if exceptional is not None and np.any(exceptional):
+        values = [component[exceptional] for component in components]
+        norm = values[0]
+        for component in values[1:]:
+            norm = np.hypot(norm, component)
+        result[exceptional] = abs(norm)
+    return result
+
+
+def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
+    """Correct ill-conditioned/range-extreme norms after the vectorized path.
+
+    ``m2`` is a fresh temporary, so NumPy results may reuse its storage. Squared
+    quantities outside float64's range remain signed infinity/zero; their square
+    roots can still be finite and are calculated without squaring the scale.
+    """
+    tiny = np.finfo(np.float64).tiny
+    lower, upper = _bounds(m2)
+    e_min, e_max = _bounds(E)
+    largest_energy = max(abs(float(e_min)), abs(float(e_max)))
+    bound = (_CANCELLATION_RTOL*largest_energy)*largest_energy
+    if ((lower == 0 and upper == 0) or not np.isfinite(lower) or not np.isfinite(upper)):
+        if _null_axis(E, px, py, pz) is not None:
+            return np.zeros_like(m2)
+    # Common timelike/spacelike batches need no masks or scaled temporaries.
+    if ((lower >= tiny and lower > bound and np.isfinite(upper))
+            or (upper <= -tiny and -upper > bound and np.isfinite(lower))):
+        if squared:
+            return m2
+        if isinstance(m2, np.ndarray):
+            if lower < 0:
+                np.negative(m2, out=m2)
+            np.sqrt(m2, out=m2)
+            if lower < 0:
+                np.negative(m2, out=m2)
+            return m2
+        return np.sqrt(m2) if lower > 0 else -np.sqrt(-m2)
+
+    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        local_bound = (_CANCELLATION_RTOL*abs(E))*abs(E)
+        exceptional = (~np.isfinite(m2) | (abs(m2) <= local_bound)
+                       | ((m2 > -tiny) & (m2 < tiny)))
+    with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+        if squared:
+            result = m2
+        elif isinstance(m2, np.ndarray):
+            negative = np.signbit(m2)
+            np.abs(m2, out=m2)
+            np.sqrt(m2, out=m2)
+            np.negative(m2, out=m2, where=negative)
+            result = m2
+        else:
+            result = np.sign(m2) * np.sqrt(abs(m2))
+        if not backend_any(exceptional):
+            return result
+
+        values = (px, py, pz, E)
+        if isinstance(m2, np.ndarray):
+            values = tuple(value[exceptional] for value in values)
+        finite = np.isfinite(values[0])
+        for value in values[1:]:
+            finite = finite & np.isfinite(value)
+        mask = None if isinstance(m2, np.ndarray) else exceptional & finite
+        fallback = accurate_result(values, lib, root=not squared, where=mask)
+        if isinstance(m2, np.ndarray):
+            result[exceptional] = np.where(finite, fallback, result[exceptional])
+            return result
+        return backend_where(exceptional & finite, fallback, result, lib)
+
+
 def compute_pt(px, py, lib):
     """
     Compute transverse momentum.
@@ -145,7 +294,7 @@ def compute_pt(px, py, lib):
         Transverse momentum with the same type as input
     """
     # Use the appropriate backend for the square root
-    pt = backend_sqrt(px*px + py*py, lib)
+    pt = np.hypot(px, py)
     
     # Convert to scalar only if both inputs were scalars
     if isinstance(px, (float, int)) and isinstance(py, (float, int)):
@@ -169,7 +318,7 @@ def compute_p(px, py, pz, lib):
         Total momentum with the same type as input
     """
     # Use the appropriate backend for the square root
-    p = backend_sqrt(px*px + py*py + pz*pz, lib)
+    p = np.hypot(np.hypot(px, py), pz)
     
     # Convert to scalar only if all inputs were scalars
     if isinstance(px, (float, int)) and isinstance(py, (float, int)) and isinstance(pz, (float, int)):
@@ -261,8 +410,17 @@ def compute_p4_from_ptepm(pt, eta, phi, m, lib):
     """
     px = pt * backend_cos(phi, lib)
     py = pt * backend_sin(phi, lib)
-    pz = pt * backend_sinh(eta, lib)
-    E = backend_sqrt(pt*pt * backend_cosh(eta, lib)**2 + m*m, lib)
+    with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+        pz = pt * backend_sinh(eta, lib)
+        exceptional = ~np.isfinite(pz) & np.isfinite(pt) & np.isfinite(eta)
+        if backend_any(exceptional):
+            # sinh(eta) itself may overflow even when pt*sinh(eta) is finite.
+            magnitude = np.exp(np.log(abs(pt)) + abs(eta) - np.log(2.)
+                               + np.log1p(-np.exp(-2*abs(eta))))
+            fallback = np.sign(pt) * np.sign(eta) * magnitude
+            fallback = backend_where(pt == 0, 0., fallback, lib)
+            pz = backend_where(exceptional, fallback, pz, lib)
+        E = np.hypot(np.hypot(pt, pz), m)
     
     # Convert to scalar only if all inputs were scalars
     if all(isinstance(x, (float, int)) for x in [pt, eta, phi, m]):
