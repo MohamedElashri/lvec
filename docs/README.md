@@ -129,7 +129,7 @@ def from_p4(cls, px, py, pz, E):
 ```
 ## Properties
 
-All properties are cached for performance optimization. Components are owned read-only snapshots; create a new vector for changed components.
+Derived properties are cached on first access. Components are owned read-only snapshots, and cached numeric arrays are read-only. Create a new vector for changed components; after low-level changes to private component attributes, call `touch()` explicitly.
 
 ### Kinematic Properties
 
@@ -808,29 +808,47 @@ with uproot.recreate("output.root") as f:
 
 ## Performance Considerations
 
-1. **Caching Strategy**
-   - Derived properties are cached on first access
-   - Cache is invalidated only when necessary
-   - Owned immutable components prevent stale cache usage
+Derived properties are cached on first access. By default, intermediate squared
+component arrays are temporary rather than retained, so computing only `mass`
+keeps one result array in the cache. For workloads repeatedly combining several
+properties, `cache_intermediates=True` opts into retaining shared intermediates.
+The same keyword is available on `Vector2D` and `Vector3D` constructors.
+Components are copied into read-only snapshots at construction, trading an
+upfront copy for reliable cached values when input arrays are later modified.
 
-2. **Memory Management**
-   - Large arrays are handled efficiently
-   - Backend operations avoid unnecessary copies
-   - Lazy evaluation where possible
+```python
+vectors = LVec(px, py, pz, E, cache_intermediates=False, cache_stats=False)
+masses = vectors.mass  # First calculation; later reads reuse the result.
+print(vectors.cache_stats["overall"]["retained_bytes"])
 
-3. **Optimization Tips**
-   ```python
-   # Efficient for large datasets
-   vectors = LVec(px, py, pz, E)
-   masses = vectors.mass  # Cached after first calculation
-   
-   # Avoid repeated calculations
-   pt = vectors.pt  # Store if used multiple times
-   
-   # Efficient filtering
-   mask = (vectors.pt > 20) & (np.abs(vectors.eta) < 2.5)
-   selected = vectors[mask]
-   ```
+# No retained derived arrays (each property access computes again):
+uncached = LVec(px, py, pz, E, max_cache_size=0)
+```
+
+`max_cache_size` limits the number of cached arrays, not their total bytes.
+Bounded caches use LRU eviction; unlimited caches avoid LRU bookkeeping.
+`cache_stats=False` disables hit/miss counting, while `cache_stats` still reports
+cache size and retained bytes. TTLs use a monotonic clock. `set_ttl` works before
+first access and its policy persists after expiration, eviction, and `touch()`;
+`set_ttl(name, None)` explicitly disables expiration for that property.
+
+Awkward shape checks compare list counts at every nesting level and missing-value
+positions with array operations. Matching regular and variable-list layouts are
+accepted; incompatible shapes and masks raise `ShapeError`. Validation does not
+index individual events in Python.
+
+Run the lightweight benchmark with the environment you intend to use:
+
+```bash
+python benchmarks/benchmark_core.py --sizes 1000 1000000 --jagged-events 10000
+```
+
+It prints JSON containing versions, seeded workload parameters, median timings
+for construction, uncached calculation, cached reads, and a complete analysis
+workflow. Memory measurements run separately and distinguish retained cache
+buffers from peak traced allocations. Input data and vector construction are
+excluded from the property-memory measurement. Compare the same workload and
+environment across branches; cached reads do not measure arithmetic throughput.
 
 ## Reference Frames
 
