@@ -3,12 +3,31 @@ name: lvec CI
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
 
 permissions:
   contents: read
 
 jobs:
+  actions-lock:
+    name: Check action lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Verify action dependencies
+        uses: MohamedElashri/sanad@v1.0.1
+        with:
+          mode: check
+          base: ${{ github.event.pull_request.base.sha }}
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -25,9 +44,11 @@ jobs:
             dependencies: current
           - python: "3.14"
             dependencies: current
+          - python: "3.15"
+            dependencies: current
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version: ${{ matrix.python }}
       - name: Install current dependencies
@@ -44,8 +65,8 @@ jobs:
   numpy-only:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version: "3.13"
       - run: python -m pip install -e ".[test]"
@@ -56,11 +77,15 @@ jobs:
   distribution:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version: "3.13"
-      - run: python -m pip install build twine
+      - run: python -m pip install build "twine>=7" pypi-attestations
+      - name: Verify publishing CLI entry points
+        run: |
+          python -m pypi_attestations sign --help > /dev/null
+          python -m twine upload --help > /dev/null
       - run: python -m build
       - run: python -m twine check dist/*
       - name: Verify installed wheel
@@ -75,7 +100,7 @@ jobs:
           assert importlib.metadata.version("lvec") == lvec.__version__
           assert LVec(1e200, 1., 0., 1e200).mass2 == -1.
           PYCODE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4.6.2
         with:
           name: distributions
           path: dist/
