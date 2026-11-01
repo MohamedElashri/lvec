@@ -139,6 +139,9 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 
 ## Available Methods
 
+See the [physics analysis guide](docs/analysis_features.md) for kinematics,
+angular matching, event sums, Awkward records, and decay-angle conventions.
+
 ### Lorentz Vector (LVec) Methods
 
 | Method | Description | Parameters | Returns |

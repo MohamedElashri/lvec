@@ -9,6 +9,7 @@
 7. [Advanced Usage](#advanced-usage)
 8. [Performance Considerations](#performance-considerations)
 9. [Reference Frames](#reference-frames)
+10. [Physics Analysis Helpers](analysis_features.md)
 
 ## Overview
 
@@ -813,6 +814,8 @@ component arrays are temporary rather than retained, so computing only `mass`
 keeps one result array in the cache. For workloads repeatedly combining several
 properties, `cache_intermediates=True` opts into retaining shared intermediates.
 The same keyword is available on `Vector2D` and `Vector3D` constructors.
+Components are copied into read-only snapshots at construction, trading an
+upfront copy for reliable cached values when input arrays are later modified.
 
 ```python
 vectors = LVec(px, py, pz, E, cache_intermediates=False, cache_stats=False)
