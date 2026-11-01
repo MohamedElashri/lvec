@@ -19,7 +19,6 @@ class Vec2D:
         self._lib = 'unknown'
         try:
             self._x, self._y, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y)))
-            check_shapes(self._x, self._y, self._lib)
             self._x, self._y = own_components(self._x, self._y)
         except Exception as e:
             if isinstance(e, ShapeError):
@@ -107,10 +106,7 @@ class Vec2D:
     def r(self):
         """Magnitude of the vector."""
         def calculate_r():
-            # Use cached intermediate calculations
-            x_squared = self._x_squared()
-            y_squared = self._y_squared()
-            return backend_sqrt(x_squared + y_squared, self._lib)
+            return np.hypot(self._x, self._y)
             
         return self._get_cached('r', calculate_r, ['x', 'y'])
     
@@ -169,7 +165,6 @@ class Vec3D:
         self._lib = 'unknown'
         try:
             self._x, self._y, self._z, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y, z)))
-            check_shapes(self._x, self._y, self._z, self._lib)
             self._x, self._y, self._z = own_components(self._x, self._y, self._z)
         except Exception as e:
             if isinstance(e, ShapeError):
@@ -274,7 +269,7 @@ class Vec3D:
         """Magnitude of the vector."""
         def calculate_r():
             # Use cached intermediate calculations for better efficiency
-            return backend_sqrt(self._xy_squared() + self._z_squared(), self._lib)
+            return np.hypot(np.hypot(self._x, self._y), self._z)
             
         return self._get_cached('r', calculate_r, ['x', 'y', 'z'])
     
@@ -283,7 +278,7 @@ class Vec3D:
         """Cylindrical radius."""
         def calculate_rho():
             # Use the shared intermediate calculation
-            return backend_sqrt(self._xy_squared(), self._lib)
+            return np.hypot(self._x, self._y)
             
         return self._get_cached('rho', calculate_rho, ['x', 'y'])
     

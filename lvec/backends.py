@@ -62,9 +62,23 @@ def backend_where(condition, x, y, lib):
         import awkward as ak
         result = ak.where(condition, x, y)
         # ak.where may turn a missing list into a list containing None.
-        # Restore option masks at every depth of an Awkward condition.
+        # Restore only existing optional LIST axes. Masking every axis also
+        # wraps ordinary arrays in unnecessary option buffers and makes large
+        # eta/rapidity calculations retain much more memory than their inputs.
         if is_ak(condition):
-            for axis in range(condition.ndim):
+            axes = set()
+            pending = [(ak.type(condition).content, 0)]
+            while pending:
+                array_type, axis = pending.pop()
+                if isinstance(array_type, ak.types.OptionType):
+                    if axis < condition.ndim - 1:
+                        axes.add(axis)
+                    pending.append((array_type.content, axis))
+                elif isinstance(array_type, (ak.types.ListType, ak.types.RegularType)):
+                    pending.append((array_type.content, axis + 1))
+                elif isinstance(array_type, ak.types.UnionType):
+                    pending.extend((content, axis) for content in array_type.contents)
+            for axis in sorted(axes):
                 result = ak.mask(result, ~ak.is_none(condition, axis=axis))
         return result
     else:
