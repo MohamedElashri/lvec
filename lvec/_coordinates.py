@@ -136,8 +136,12 @@ def install_conversions(base):
     for dimension,families in COORDINATE_FAMILIES.items():
         for name,fields in families:
             momentum=''.join({'x':'px','y':'py','rho':'pt','z':'pz','t':'energy','tau':'mass'}.get(f,f) for f in fields)
-            def conversion(self,_dimension=dimension):
-                return project(self,_dimension,{})
+            def conversion(self,_dimension=dimension,_fields=fields):
+                # Named representations impute zero in the requested
+                # coordinate, following vector. Dimension-only projections
+                # instead impute Cartesian z/t=0.
+                added={field:0. for i,field in enumerate(_fields) if i>=self._dimension}
+                return project(self,_dimension,added)
             conversion.__doc__="Return an owned Cartesian vector in the requested dimension."
             for alias in (name,momentum):
                 setattr(base,'to_'+alias,conversion)

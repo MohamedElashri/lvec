@@ -19,7 +19,10 @@ def signed_norm(energy,x,y,z,*,squared=False):
             result=invariant_result(e*e-(x*x+y*y+z*z),e,x,y,z,'np',squared=squared)
         return (result,)
     kernel.outputs=1
-    return _dispatch(kernel,energy,x,y,z)[0]
+    result=_dispatch(kernel,energy,x,y,z)
+    # ak.transform unwraps a one-output callback; the NumPy dispatcher retains
+    # its one-element tuple. Never index the first event of an Awkward result.
+    return result if is_ak(result) else result[0]
 
 
 def _tolerance(value):
@@ -28,6 +31,11 @@ def _tolerance(value):
     if backend_any(~np.isfinite(value) | (value<0)):
         raise ValueError("Tolerance must be finite and non-negative")
     return value
+
+
+def squared_sum(*components):
+    with np.errstate(over='ignore',under='ignore',invalid='ignore'):
+        return sum(c*c for c in components)
 
 
 def directions(components):
@@ -80,7 +88,11 @@ class PlanarAPI:
         return self.rho
 
     def __pow__(self, exponent):
-        return self._norm2 if exponent == 2 else abs(self) ** exponent
+        if np.isscalar(exponent) or (isinstance(exponent,np.ndarray) and exponent.ndim==0):
+            return self._norm2 if exponent == 2 else abs(self) ** exponent
+        exponent=exponent if is_ak(exponent) else np.asarray(exponent)
+        return backend_where(exponent==2,self._norm2,abs(self)**exponent,
+                             'ak' if is_ak(exponent) else self._lib)
 
     def __matmul__(self, other):
         return self.dot(other)
@@ -105,9 +117,9 @@ class PlanarAPI:
         self._check_other(other)
         rtol,atol=_tolerance(rtol),_tolerance(atol)
         result = True
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid='ignore',over='ignore',under='ignore'):
             for a, b in zip(self._components(), other._components()):
-                close = (a == b) | (abs(a-b) <= atol + rtol*abs(b))
+                close = (a == b) | (np.isfinite(a)&np.isfinite(b)&(abs(a-b) <= atol + rtol*abs(b)))
                 if equal_nan:
                     close = close | (np.isnan(a) & np.isnan(b))
                 result = result & close
@@ -142,10 +154,10 @@ class PlanarAPI:
     def __len__(self):
         return len(self.x)
 
-    def reshape(self, *shape):
+    def reshape(self, *shape, order='C'):
         if self._lib == 'ak':
             raise TypeError("Use Awkward operations on components for jagged reshaping")
-        return self._new(*(np.reshape(c, shape[0] if len(shape) == 1 else shape) for c in self._components()))
+        return self._new(*(np.reshape(c, shape[0] if len(shape) == 1 else shape,order=order) for c in self._components()))
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if method != '__call__':
@@ -175,10 +187,14 @@ class PlanarAPI:
         return NotImplemented
 
     def __array_function__(self, func, types, args, kwargs):
+        kwargs=kwargs.copy()
+        if not args and 'a' in kwargs:
+            args=(kwargs.pop('a'),)
         if func is np.sum:
             return args[0].sum(*args[1:], **kwargs)
         if func in (np.isclose, np.allclose):
-            return (args[0].isclose if func is np.isclose else args[0].allclose)(*args[1:], **kwargs)
+            rest=args[1:] or (kwargs.pop('b'),)
+            return (args[0].isclose if func is np.isclose else args[0].allclose)(*rest, **kwargs)
         if func is np.count_nonzero:
             v = args[0]
             nonzero = False
@@ -194,7 +210,23 @@ class PlanarAPI:
                                 for i in range(first._dimension)))
         if func is np.reshape:
             return args[0].reshape(*args[1:], **kwargs)
+        if func is np.broadcast_arrays:
+            first=args[0]
+            for v in args:first._check_other(v)
+            arrays=np.broadcast_arrays(*(c for v in args for c in v._components()),**kwargs)
+            return [v._new(*arrays[i*first._dimension:(i+1)*first._dimension]) for i,v in enumerate(args)]
         return NotImplemented
+
+    def __awkward_function__(self,func,array_likes,args,kwargs):
+        # Delegate container operations to named records while leaving owned
+        # LVec calculation kernels and their property caches unchanged.
+        def convert(value):
+            if isinstance(value,PlanarAPI):return value.to_ak_record(with_behavior=True)
+            if isinstance(value,tuple):return tuple(convert(v) for v in value)
+            if isinstance(value,list):return [convert(v) for v in value]
+            if isinstance(value,dict):return {k:convert(v) for k,v in value.items()}
+            return value
+        return func(*convert(args),**convert(kwargs))
 
     @property
     def rho(self):
@@ -202,7 +234,7 @@ class PlanarAPI:
 
     @property
     def rho2(self):
-        return self.x*self.x + self.y*self.y
+        return squared_sum(self.x,self.y)
 
     @property
     def _norm2(self):
@@ -212,6 +244,13 @@ class PlanarAPI:
     py = property(lambda self: self.y)
     pt = property(lambda self: self.rho)
     pt2 = property(lambda self: self.rho2)
+
+    @property
+    def lib(self):
+        if self._lib=='ak':
+            import awkward as ak
+            return ak
+        return np
 
     @classmethod
     def from_coordinates(cls, **coordinates):
@@ -251,6 +290,28 @@ class PlanarAPI:
         for name,value in zip(fields,values):
             out[name]=value
         return out
+
+    def to_ak_record(self,*,with_behavior=False):
+        import awkward as ak
+        fields=dict(zip(('x','y','z','t')[:self._dimension],self._components()))
+        options={}
+        if with_behavior:
+            from .awkward import behavior
+            options={'with_name':f'LVec{self._dimension}D','behavior':behavior}
+        if self._lib=='np' and self.ndim==0:
+            return ak.zip(fields,**options)
+        return ak.zip(fields,optiontype_outside_record=True,**options)
+
+    @classmethod
+    def from_ak_record(cls,records):
+        from ._coordinates import obj
+        import awkward as ak
+        fields=ak.fields(records)
+        names=('px','py','pz','E') if 'px' in fields else ('x','y','z','t')
+        result=obj(**{n:records[n] for n in names[:cls._dimension]})
+        if result._dimension!=cls._dimension:
+            raise TypeError("Records do not match the class dimension")
+        return result if type(result) is cls else cls(*result._components())
 
     def unit(self):
         """Normalize magnitude; zero vectors remain zero.
@@ -317,7 +378,7 @@ class SpatialAPI(PlanarAPI):
         return self.mag
 
     mag = property(lambda self: self.r)
-    mag2 = property(lambda self: self.x*self.x + self.y*self.y + self.z*self.z)
+    mag2 = property(lambda self: squared_sum(self.x,self.y,self.z))
     p = property(lambda self: self.mag)
     p2 = property(lambda self: self.mag2)
     pz = property(lambda self: self.z)
@@ -342,7 +403,7 @@ class SpatialAPI(PlanarAPI):
 
     @property
     def cottheta(self):
-        with np.errstate(divide='ignore',invalid='ignore'):
+        with np.errstate(divide='ignore',invalid='ignore',over='ignore',under='ignore'):
             return np.divide(self.z,self.rho)
 
     def scale3D(self,factor):
@@ -476,7 +537,7 @@ class LorentzAPI(SpatialAPI):
     _norm2 = property(lambda self: self.mass2)
 
     theta=property(lambda self:np.arctan2(self.pt,self.pz))
-    t2=property(lambda self:self.E*self.E)
+    t2=property(lambda self:squared_sum(self.E))
     E2=e2=energy2=property(lambda self:self.t2)
 
     @property
@@ -484,7 +545,7 @@ class LorentzAPI(SpatialAPI):
         with np.errstate(divide='ignore',invalid='ignore'):
             return self.E*np.sin(self.theta)
 
-    Et2=property(lambda self:self.Et*self.Et)
+    Et2=property(lambda self:squared_sum(self.Et))
     et=transverse_energy=property(lambda self:self.Et)
     et2=transverse_energy2=property(lambda self:self.Et2)
 
@@ -519,14 +580,20 @@ class LorentzAPI(SpatialAPI):
 
     def is_timelike(self,tolerance=0):
         tol=_tolerance(tolerance)
+        if not is_ak(tol) and np.ndim(tol)==0:
+            return self.mass>0 if tol==0 else self.mass2>tol
         return backend_where(tol==0,self.mass>0,self.mass2>tol,self._lib)
 
     def is_spacelike(self,tolerance=0):
         tol=_tolerance(tolerance)
+        if not is_ak(tol) and np.ndim(tol)==0:
+            return self.mass<0 if tol==0 else self.mass2<-tol
         return backend_where(tol==0,self.mass<0,self.mass2<-tol,self._lib)
 
     def is_lightlike(self,tolerance=1e-5):
         tol=_tolerance(tolerance)
+        if not is_ak(tol) and np.ndim(tol)==0:
+            return self.mass==0 if tol==0 else abs(self.mass2)<tol
         return backend_where(tol==0,self.mass==0,abs(self.mass2)<tol,self._lib)
 
     def boost_beta3(self,beta3):
@@ -544,6 +611,8 @@ class LorentzAPI(SpatialAPI):
         for c in p4._components():invalid=invalid|~np.isfinite(c)
         if backend_any(invalid):
             raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
+        if direction==-1 and self is p4:
+            return self._new(*(c*0. for c in self._components()[:3]),mass)
         return self._new(*reference_boost(self._components(),p4._components(),mass,direction))
 
     def boost_p4(self,p4):

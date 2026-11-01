@@ -416,6 +416,8 @@ class LVec(LorentzAPI):
     
     def __mul__(self, scalar):
         """Multiply by scalar."""
+        if isinstance(scalar,PlanarAPI):
+            raise TypeError("Use dot or @ for vector products")
         return LVec._from_owned(scalar * self.px, scalar * self.py,
                    scalar * self.pz, scalar * self.E,
                    _trusted_awkward=self._lib == 'ak' and type(self) is LVec
@@ -736,12 +738,18 @@ class LVec(LorentzAPI):
         if not isinstance(records, (ak.Array, ak.Record)):
             raise TypeError("records must be an Awkward Array or Record")
         required = {'px', 'py', 'pz', 'E'}
-        if not required.issubset(ak.fields(records)):
+        generic={'x','y','z','t'}
+        fields=set(ak.fields(records))
+        if required.issubset(fields):
+            names=('px','py','pz','E')
+        elif generic.issubset(fields):
+            names=('x','y','z','t')
+        else:
             raise InputError('records', ak.fields(records),
-                             'Fields px, py, pz, E are required')
-        return cls(*(records[field] for field in ('px', 'py', 'pz', 'E')))
+                             'Fields px, py, pz, E (or x, y, z, t) are required')
+        return cls(*(records[field] for field in names))
 
-    def to_ak_record(self):
+    def to_ak_record(self,*,with_behavior=False):
         """Export px, py, pz, E as Awkward records, preserving jagged structure.
 
         Scalars produce an ak.Record. Array inputs produce an ak.Array with
@@ -753,9 +761,13 @@ class LVec(LorentzAPI):
         except ImportError as exc:
             raise DependencyError('awkward') from exc
         fields = dict(zip(('px', 'py', 'pz', 'E'), self.to_p4()))
+        options={}
+        if with_behavior:
+            from .awkward import behavior
+            options={'with_name':'LVec4D','behavior':behavior}
         if self._lib == 'np' and all(np.ndim(c) == 0 for c in self.to_p4()):
-            return ak.Record(fields)
-        return ak.zip(fields, optiontype_outside_record=True)
+            return ak.zip(fields,**options)
+        return ak.zip(fields, optiontype_outside_record=True,**options)
 
     def boost_to_rest(self, reference=None):
         """Boost to the rest frame of reference (self when omitted).

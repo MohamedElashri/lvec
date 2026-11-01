@@ -38,6 +38,9 @@ def transform(values, matrix, dimension):
                 value=sum(terms)
                 bound=sum(abs(x) for x in terms)
                 risk=~np.isfinite(value)|((abs(value)<=np.sqrt(np.finfo(float).eps)*bound)&(bound!=0))
+                possible=False
+                for a,b in zip(coords,row):possible=possible|((a!=0)&(b!=0))
+                risk=risk|((abs(value)<np.finfo(float).tiny)&possible)
                 for a,b in zip(coords,row):risk=risk&np.isfinite(a)&np.isfinite(b)
                 if np.any(risk):
                     zero=np.zeros_like(value[risk])

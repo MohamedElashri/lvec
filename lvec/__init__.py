@@ -12,7 +12,12 @@ Momentum4D = LVec
 for _class in (Vector2D, Vector3D, LVec):
     install_factories(_class, _class._dimension)
 
+def register_awkward():
+    """Enable native LVec record behavior globally when Awkward is installed."""
+    from .awkward import register_awkward as register
+    register()
+
 __all__ = ['LVec', 'Vector2D', 'Vector3D', 'Vector4D', 'Momentum2D',
            'Momentum3D', 'Momentum4D', 'Frame', 'ShapeError',
-           'obj', 'array', 'arr', 'Array', 'awk', 'zip']
+           'obj', 'array', 'arr', 'Array', 'awk', 'zip', 'register_awkward']
 __version__ = '0.2.0'
