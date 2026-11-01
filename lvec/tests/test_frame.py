@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-import awkward as ak
+ak = pytest.importorskip("awkward")
 from lvec import LVec, Frame
 from lvec.exceptions import InputError
 
@@ -51,18 +51,18 @@ def test_frame_from_lvec():
     # Create frame from the 4-vector
     frame = Frame.from_lvec(lvec, name="rest_frame")
     
-    # The velocity should be -p/E
-    assert abs(frame.beta_x - (-lvec.px / lvec.E)) < 1e-10
-    assert abs(frame.beta_y - (-lvec.py / lvec.E)) < 1e-10
-    assert abs(frame.beta_z - (-lvec.pz / lvec.E)) < 1e-10
+    # The physical frame velocity is +p/E
+    assert abs(frame.beta_x - (lvec.px / lvec.E)) < 1e-10
+    assert abs(frame.beta_y - (lvec.py / lvec.E)) < 1e-10
+    assert abs(frame.beta_z - (lvec.pz / lvec.E)) < 1e-10
     
     # Test with a more complex 4-vector
     lvec2 = LVec(px=1.0, py=2.0, pz=3.0, E=10.0)
     frame2 = Frame.from_lvec(lvec2)
     
-    assert abs(frame2.beta_x - (-0.1)) < 1e-10
-    assert abs(frame2.beta_y - (-0.2)) < 1e-10
-    assert abs(frame2.beta_z - (-0.3)) < 1e-10
+    assert abs(frame2.beta_x - (0.1)) < 1e-10
+    assert abs(frame2.beta_y - (0.2)) < 1e-10
+    assert abs(frame2.beta_z - (0.3)) < 1e-10
 
 def test_frame_from_lvec_zero_energy():
     """Test that creating a frame from a zero-energy LVec raises an error."""
@@ -79,11 +79,11 @@ def test_frame_center_of_mass():
     # Create CM frame
     cm_frame = Frame.center_of_mass([p1, p2], name="cm")
     
-    # Calculate expected velocity (negative of total momentum / total energy)
+    # Calculate expected velocity (total momentum / total energy)
     total = p1 + p2
-    expected_bx = -total.px / total.E
-    expected_by = -total.py / total.E
-    expected_bz = -total.pz / total.E
+    expected_bx = total.px / total.E
+    expected_by = total.py / total.E
+    expected_bz = total.pz / total.E
     
     assert abs(cm_frame.beta_x - expected_bx) < 1e-10
     assert abs(cm_frame.beta_y - expected_by) < 1e-10
@@ -164,6 +164,7 @@ def test_lvec_transform_frame():
     v_cm2 = v_lab.to_frame(cm_frame)
     v2_cm2 = v2_lab.to_frame(cm_frame)
     total_cm2 = v_cm2 + v2_cm2
+    assert abs(total_cm2.pz) < 1e-10
     print(f"Using to_frame - Total in CM: px={total_cm2.px}, py={total_cm2.py}, pz={total_cm2.pz}, E={total_cm2.E}")
     
     assert abs(total_cm.px) < 1e-10
