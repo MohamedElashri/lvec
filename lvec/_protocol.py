@@ -22,6 +22,26 @@ def signed_norm(energy,x,y,z,*,squared=False):
     return _dispatch(kernel,energy,x,y,z)[0]
 
 
+def _tolerance(value):
+    if not is_ak(value):
+        value=np.asarray(value)
+    if backend_any(~np.isfinite(value) | (value<0)):
+        raise ValueError("Tolerance must be finite and non-negative")
+    return value
+
+
+def directions(components):
+    """Unit spatial coordinates without overflowing/underflowing the norm."""
+    scale=abs(components[0])
+    for c in components[1:]:
+        scale=np.maximum(scale,abs(c))
+    with np.errstate(divide='ignore',invalid='ignore',under='ignore'):
+        scaled=tuple(np.divide(c,scale) for c in components)
+        norm=np.hypot(*scaled[:2])
+        for c in scaled[2:]:norm=np.hypot(norm,c)
+        return tuple(c/norm for c in scaled)
+
+
 class PlanarAPI:
     _dimension = 2
     __array_priority__ = 1000
@@ -83,8 +103,7 @@ class PlanarAPI:
 
     def isclose(self, other, rtol=1e-5, atol=1e-8, equal_nan=False):
         self._check_other(other)
-        if backend_any((np.asarray(rtol) < 0) | (np.asarray(atol) < 0)):
-            raise ValueError("Comparison tolerances must be non-negative")
+        rtol,atol=_tolerance(rtol),_tolerance(atol)
         result = True
         with np.errstate(invalid='ignore'):
             for a, b in zip(self._components(), other._components()):
@@ -233,6 +252,56 @@ class PlanarAPI:
             out[name]=value
         return out
 
+    def unit(self):
+        """Normalize magnitude; zero vectors remain zero.
+
+        Nonzero null 4-vectors have no finite normalization. Their nonzero
+        components become signed infinities and their zero components stay zero.
+        """
+        if self._dimension==4:
+            norm=abs(self.mass)
+            with np.errstate(divide='ignore',invalid='ignore'):
+                values=[backend_where((c==0)&(norm==0),0.,np.divide(c,norm),self._lib)
+                        for c in self._components()]
+        else:
+            values=directions(self._components())
+            zero=True
+            for c in self._components():zero=zero&(c==0)
+            values=[backend_where(zero,0.,c,self._lib) for c in values]
+        return self._new(*values)
+
+    def scale2D(self,factor):
+        values=self._components()
+        return self._new(*(c*factor if i<2 else c for i,c in enumerate(values)))
+
+    neg2D=property(lambda self:self.scale2D(-1))
+
+    def delta_phi(self,other):
+        if not isinstance(other,PlanarAPI):
+            raise TypeError("other must be a numerical vector")
+        return (self.phi-other.phi+np.pi)%(2*np.pi)-np.pi
+
+    def deltaphi(self,other):
+        return self.delta_phi(other)
+
+    def _direction_cosine(self,other):
+        if not isinstance(other,PlanarAPI) or min(self._dimension,3)!=min(other._dimension,3):
+            raise TypeError("Direction comparisons require matching spatial dimensions")
+        a=directions(self._components()[:3]);b=directions(other._components()[:3])
+        return sum(x*y for x,y in zip(a,b))
+
+    def is_parallel(self,other,tolerance=1e-5):
+        return self._direction_cosine(other)>1-_tolerance(tolerance)
+
+    def is_antiparallel(self,other,tolerance=1e-5):
+        return self._direction_cosine(other)<-1+_tolerance(tolerance)
+
+    def is_perpendicular(self,other,tolerance=1e-5):
+        return abs(self._direction_cosine(other))<_tolerance(tolerance)
+
+    def rotateZ(self,angle):
+        return self.rotate(angle)
+
 
 class SpatialAPI(PlanarAPI):
     _dimension = 3
@@ -271,6 +340,55 @@ class SpatialAPI(PlanarAPI):
     def cottheta(self):
         with np.errstate(divide='ignore',invalid='ignore'):
             return np.divide(self.z,self.rho)
+
+    def scale3D(self,factor):
+        return self._new(*(c*factor if i<3 else c for i,c in enumerate(self._components())))
+
+    neg3D=property(lambda self:self.scale3D(-1))
+
+    def cross(self,other):
+        from .vectors import Vec3D
+        if not isinstance(other,SpatialAPI):
+            raise TypeError("cross requires a 3D or 4D vector")
+        a,b,c=self.x,self.y,self.z
+        d,e,f=other.x,other.y,other.z
+        return Vec3D(b*f-c*e,c*d-a*f,a*e-b*d)
+
+    def deltaangle(self,other):
+        if not isinstance(other,SpatialAPI):
+            raise TypeError("deltaangle requires a 3D or 4D vector")
+        a=directions(self._components()[:3]);b=directions(other._components()[:3])
+        cross=(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0])
+        return np.arctan2(np.hypot(np.hypot(cross[0],cross[1]),cross[2]),sum(x*y for x,y in zip(a,b)))
+
+    opening_angle=deltaangle
+
+    def deltaeta(self,other):
+        if not isinstance(other,SpatialAPI):
+            raise TypeError("deltaeta requires a 3D or 4D vector")
+        with np.errstate(invalid='ignore'):
+            return self.eta-other.eta
+
+    def delta_r2(self,other):
+        return self.deltaeta(other)**2+self.delta_phi(other)**2
+
+    def delta_r(self,other):
+        return np.sqrt(self.delta_r2(other))
+
+    def deltaR(self,other):
+        return self.delta_r(other)
+
+    def deltaR2(self,other):
+        return self.delta_r2(other)
+
+    def rotateX(self,angle):
+        return self.rotx(angle)
+
+    def rotateY(self,angle):
+        return self.roty(angle)
+
+    def rotateZ(self,angle):
+        return self.rotz(angle)
 
 
 class LorentzAPI(SpatialAPI):
@@ -333,6 +451,29 @@ class LorentzAPI(SpatialAPI):
         from .vectors import Vec3D
         with np.errstate(divide='ignore',invalid='ignore'):
             return Vec3D(*(np.divide(c,self.E) for c in self._components()[:3]))
+
+    def scale4D(self,factor):
+        return self*factor
+
+    neg4D=property(lambda self:-self)
+
+    def deltaRapidityPhi(self,other):
+        return self.delta_r(other,rapidity=True)
+
+    def deltaRapidityPhi2(self,other):
+        return self.delta_r2(other,rapidity=True)
+
+    def is_timelike(self,tolerance=0):
+        tol=_tolerance(tolerance)
+        return backend_where(tol==0,self.mass>0,self.mass2>tol,self._lib)
+
+    def is_spacelike(self,tolerance=0):
+        tol=_tolerance(tolerance)
+        return backend_where(tol==0,self.mass<0,self.mass2<-tol,self._lib)
+
+    def is_lightlike(self,tolerance=1e-5):
+        tol=_tolerance(tolerance)
+        return backend_where(tol==0,self.mass==0,abs(self.mass2)<tol,self._lib)
 
 
 from ._coordinates import install_conversions

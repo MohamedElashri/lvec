@@ -9,7 +9,7 @@ from .caching import PropertyCache
 from .frame import Frame
 from ._adaptive import rotation_pair, rotation_coefficients, boost_components, adaptive_sum
 import numpy as np
-from ._protocol import LorentzAPI
+from ._protocol import PlanarAPI, SpatialAPI, LorentzAPI
 
 
 class LVec(LorentzAPI):
@@ -681,8 +681,8 @@ class LVec(LorentzAPI):
 
     def delta_phi(self, other):
         """Signed self.phi - other.phi wrapped to [-pi, pi), in radians."""
-        if not isinstance(other, LVec):
-            raise TypeError("other must be an LVec")
+        if not isinstance(other, PlanarAPI):
+            raise TypeError("other must be a numerical vector")
         return (self.phi - other.phi + np.pi) % (2 * np.pi) - np.pi
 
     def delta_r2(self, other, *, rapidity=False):
@@ -692,8 +692,8 @@ class LVec(LorentzAPI):
         common longitudinal boosts of physical vectors. Beam-axis inf-inf
         differences and other undefined coordinates return NaN.
         """
-        if not isinstance(other, LVec):
-            raise TypeError("other must be an LVec")
+        if not isinstance(other, SpatialAPI) or (rapidity and not isinstance(other,LorentzAPI)):
+            raise TypeError("other must have the required spatial/temporal coordinates")
         with np.errstate(invalid='ignore'):
             longitudinal = ((self.rapidity - other.rapidity) if rapidity
                             else (self.eta - other.eta))

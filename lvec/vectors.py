@@ -330,7 +330,8 @@ class Vec3D(SpatialAPI):
     
     def cross(self, other):
         """Compute cross product with another vector."""
-        self._check_other(other)
+        if not isinstance(other, SpatialAPI):
+            raise TypeError("cross requires a 3D or 4D vector")
         return Vec3D(self.y * other.z - self.z * other.y,
                     self.z * other.x - self.x * other.z,
                     self.x * other.y - self.y * other.x)

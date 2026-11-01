@@ -119,3 +119,49 @@ def test_explicit_awkward_constructor_broadcast():
     v=lvec.zip(dict(px=ak.Array([[1.,2.],[],[3.]]),py=0.,pz=0.,E=ak.Array([10.,20.,30.])))
     assert ak.to_list(v.E)==[[10.,10.],[],[30.]]
     assert lvec.Array([{'pt':2.,'phi':0.}]).allclose(Vector2D([2.],[0.]))
+
+
+@pytest.mark.parametrize('cls,n',[(Vector2D,2),(Vector3D,3),(LVec,4)])
+def test_unit_scaling_and_direction_predicates(cls,n):
+    values=[3.,4.,0.,13.][:n]
+    v=cls(*values)
+    u=v.unit()
+    assert abs(u)==pytest.approx(1.)
+    assert v.is_parallel(v*2)
+    assert v.is_antiparallel(-v)
+    w=cls(*([-4.,3.,0.,13.][:n]))
+    assert v.is_perpendicular(w)
+    assert cls(*([0.]*n)).unit().allclose(cls(*([0.]*n)))
+    assert not cls(*([0.]*n)).is_parallel(v)
+    assert v.scale2D(2).x==6.
+    if n>=3:
+        assert v.scale3D(2).z==0.
+        if n==4:assert v.scale3D(2).E==13.
+    if n<4:
+        huge=cls(*([1e308]*n)).unit()
+        assert abs(huge)==pytest.approx(1.)
+    with pytest.raises(ValueError):v.is_parallel(v,tolerance=-1.)
+
+
+def test_spatial_geometry_analytic_and_extreme():
+    x=Vector3D(1.,0.,0.);y=Vector3D(0.,1.,0.)
+    assert x.cross(y).allclose(Vector3D(0.,0.,1.))
+    assert x.deltaangle(y)==pytest.approx(np.pi/2)
+    assert x.cross(LVec(0.,1.,0.,2.)).allclose(Vector3D(0.,0.,1.))
+    assert LVec(1.,0.,0.,2.).cross(y).allclose(Vector3D(0.,0.,1.))
+    assert Vector3D(1e308,0.,0.).deltaangle(Vector3D(0.,1e-308,0.))==pytest.approx(np.pi/2)
+    assert np.isnan(Vector3D(0.,0.,0.).deltaangle(x))
+    assert x.deltaR(y)==pytest.approx(np.pi/2)
+    assert x.deltaphi(y)==pytest.approx(-np.pi/2)
+    assert LVec(1.,0.,0.,2.).deltaR(y)==pytest.approx(np.pi/2)
+
+
+def test_causal_classification_and_null_units():
+    v=LVec(np.array([0.,2.,1.,1e-300]),0.,0.,np.array([1.,1.,1.,2e-300]))
+    np.testing.assert_array_equal(v.is_timelike(),[True,False,False,True])
+    np.testing.assert_array_equal(v.is_spacelike(),[False,True,False,False])
+    np.testing.assert_array_equal(v.is_lightlike(tolerance=0),[False,False,True,False])
+    assert LVec(2.,0.,0.,1.).unit().mass2==pytest.approx(-1.)
+    null=LVec(1.,0.,0.,1.).unit()
+    assert null.px==np.inf and null.py==0. and null.E==np.inf
+    assert np.isnan(Vector2D(np.nan,1.).unit().x)
