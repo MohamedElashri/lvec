@@ -31,7 +31,7 @@ dependencies = [
 awkward = ["awkward>=2.7.4"]
 test = ["pytest>=8.3.5"]
 examples = ["awkward>=2.7.4", "uproot>=5.0.0", "matplotlib>=3.10.1"]
-benchmark = ["awkward>=2.7.4", "vector>=1.6.1", "matplotlib>=3.10.1", "memory-profiler>=0.61.0", "uproot>=5.0.0"]
+benchmark = ["awkward>=2.7.4", "vector>=1.6.1"]
 dev = ["lvec[awkward,test,examples,benchmark]"]
 
 [project.urls]
@@ -45,7 +45,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
-testpaths = ["lvec/tests"]
+testpaths = ["lvec/tests", "benchmarks/tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
 
