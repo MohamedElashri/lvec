@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from lvec import LVec, ShapeError
+from lvec.exceptions import BackendError
 from lvec.utils import check_shapes
 
 
@@ -268,7 +269,7 @@ def test_owned_results_reuse_safe_buffers_and_public_construction_still_snapshot
     assert values.flags.writeable and offsets.flags.writeable
 
 
-@pytest.mark.parametrize('operation', ['boost', 'rotation', 'scale', 'index'])
+@pytest.mark.parametrize('operation', ['boost', 'rotation', 'scale', 'custom_scale', 'index'])
 def test_external_parameter_buffers_cannot_mutate_results(ak, operation):
     offsets = np.array([0, 2, 2, 3])
     values = np.array([.1, .2, .3])
@@ -281,6 +282,11 @@ def test_external_parameter_buffers_cannot_mutate_results(ak, operation):
         result = v.rotz(parameter)
     elif operation == 'scale':
         result = v * parameter
+    elif operation == 'custom_scale':
+        class ExternalScalar(float):
+            def __mul__(self, other):
+                return parameter
+        result = v * ExternalScalar(2.)
     else:
         # An indexed selection can retain a caller-owned integer buffer.
         values = np.array([2, 0], dtype=np.int64)
@@ -315,3 +321,44 @@ def test_owned_arithmetic_handles_different_input_masks_and_mixed_backends(ak):
         for result, sign in [(left + right, 1), (left - right, -1)]:
             for actual, x, y in zip(result.to_p4(), left.to_p4(), right.to_p4()):
                 assert ak.to_list(actual) == ak.to_list(x + sign * y)
+
+
+@pytest.mark.parametrize('kind', ['regular', 'lists', 'sliced', 'list_array', 'indexed',
+                                 'byte_mask', 'bit_mask', 'missing', 'deep'])
+def test_cache_policy_preserves_random_near_null_physics_across_exponents(ak, kind):
+    rng = np.random.default_rng(20261103)
+    for _ in range(3):
+        scale = np.power(10., rng.uniform(-250, 250, 8))
+        p = rng.normal(size=(3, 8)) * scale
+        energy = np.hypot(np.hypot(p[0], p[1]), p[2])
+        energy[::2] = np.nextafter(energy[::2], np.inf)
+        data = tuple(shaped(ak, c, kind) for c in (*p, energy))
+        direct = LVec(*data)
+        intermediate = LVec(*data, cache_intermediates=True)
+        with np.errstate(all='raise'):
+            for name in ('mass', 'mass2'):
+                a, b = getattr(direct, name), getattr(intermediate, name)
+                assert ak.to_list(ak.ones_like(a)) == ak.to_list(ak.ones_like(b))
+                a, b = (ak.to_numpy(ak.flatten(x, axis=None)) for x in (a, b))
+                np.testing.assert_array_equal(a, b)
+                np.testing.assert_array_equal(np.signbit(a[a == 0]), np.signbit(b[b == 0]))
+
+
+@pytest.mark.parametrize('scalar', [1j, 2. + 0j, np.complex64(1j), np.complex128(2.)])
+def test_complex_scaling_remains_rejected(ak, scalar):
+    v = LVec(*(ak.Array([[value]]) for value in (1., 2., 3., 5.)))
+    with pytest.raises((BackendError, TypeError)):
+        v * scalar
+
+
+@pytest.mark.parametrize('scalar', [2, 2., True, np.float32(2), np.float64(2),
+                                   np.longdouble(2), np.int64(2), np.bool_(True)])
+def test_real_scaling_preserves_float64_readonly_snapshots(ak, scalar):
+    v = LVec(*(ak.Array([[value]]) for value in (1., 2., 3., 5.)))
+    result = v * scalar
+    for actual, original in zip(result.to_p4(), v.to_p4()):
+        assert ak.to_list(actual) == ak.to_list(original * float(scalar))
+        _, _, buffers = ak.to_buffers(actual)
+        assert all(buffer.dtype == np.float64 for key, buffer in buffers.items()
+                   if key.endswith('-data'))
+        assert all(not buffer.flags.writeable for buffer in buffers.values())

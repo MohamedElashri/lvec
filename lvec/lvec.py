@@ -413,7 +413,8 @@ class LVec:
         """Multiply by scalar."""
         return LVec._from_owned(scalar * self.px, scalar * self.py,
                    scalar * self.pz, scalar * self.E,
-                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and np.isscalar(scalar))
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec
+                   and type(scalar) in (int, float, bool))
     
     __rmul__ = __mul__
     
