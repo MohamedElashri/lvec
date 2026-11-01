@@ -151,6 +151,14 @@ _boost_numpy.outputs = 4
 
 
 def boost_components(values, beta, gamma):
+    # Scalar parameters need no Awkward-sized buffers. Broadcast zero-stride
+    # NumPy views inside each numerical leaf, retaining the exact same kernel
+    # and per-entry precision recovery (including gamma indexing).
+    if any(is_ak(value) for value in values) and all(np.isscalar(x) for x in (*beta, gamma)):
+        def kernel(*components):
+            return _boost_numpy(*np.broadcast_arrays(*components, *beta, gamma))
+        kernel.outputs = 4
+        return _dispatch(kernel, *values)
     return _dispatch(_boost_numpy, *values, *beta, gamma)
 
 
