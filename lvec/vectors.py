@@ -1,10 +1,11 @@
 # vectors.py
 import numpy as np
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
-                        backend_sin, backend_cos, backend_atan2, own_components, normalize_scalar)
+                        backend_atan2, own_components, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_pt, compute_p)
 from .exceptions import ShapeError, InputError, BackendError
 from .caching import PropertyCache
+from ._adaptive import rotation_pair, rotation_coefficients
 
 class Vec2D:
     """2D Vector class supporting both NumPy and Awkward array backends.
@@ -149,8 +150,8 @@ class Vec2D:
         Returns:
             Vec2D: New rotated 2D vector
         """
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec2D(c*self.x - s*self.y, s*self.x + c*self.y)
+        c, s = rotation_coefficients(angle)
+        return Vec2D(*rotation_pair(self.x, self.y, c, s))
 
 class Vec3D:
     """3D Vector class supporting both NumPy and Awkward array backends.
@@ -328,25 +329,22 @@ class Vec3D:
                     
     def rotx(self, angle):
         """Rotate around x-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec3D(self.x,
-                   c*self.y - s*self.z,
-                   s*self.y + c*self.z)
-    
+        c, s = rotation_coefficients(angle)
+        y, z = rotation_pair(self.y, self.z, c, s)
+        return Vec3D(self.x, y, z)
+
     def roty(self, angle):
         """Rotate around y-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec3D(c*self.x + s*self.z,
-                   self.y,
-                   -s*self.x + c*self.z)
-    
+        c, s = rotation_coefficients(angle)
+        x, z = rotation_pair(self.x, self.z, c, -s)
+        return Vec3D(x, self.y, z)
+
     def rotz(self, angle):
         """Rotate around z-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec3D(c*self.x - s*self.y,
-                   s*self.x + c*self.y,
-                   self.z)
-    
+        c, s = rotation_coefficients(angle)
+        x, y = rotation_pair(self.x, self.y, c, s)
+        return Vec3D(x, y, self.z)
+
     def rotate(self, angle, axis='z'):
         """
         Rotate around a specified axis.

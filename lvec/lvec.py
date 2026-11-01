@@ -1,12 +1,13 @@
 # lvec.py
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
-                        backend_sin, backend_cos, backend_atan2,
+                        backend_atan2,
                         backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, freeze_array, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
                     scaled_invariant, invariant_result, euclidean_result, dot_result)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
 from .frame import Frame
+from ._adaptive import rotation_pair, rotation_coefficients, boost_components, adaptive_sum
 import numpy as np
 
 
@@ -416,17 +417,10 @@ class LVec:
             # component broadcasting rules.
             bx, by, bz, boost_lib = ensure_array(*(normalize_scalar(x) for x in (bx, by, bz)))
             bx, by, bz = own_components(bx, by, bz)
-            b2 = validate_beta(bx, by, bz)
-            gamma = 1.0 / backend_sqrt(1.0 - b2, boost_lib)
-            bp = bx*self.px + by*self.py + bz*self.pz
-            # Equivalent to (gamma-1)/beta², stable at beta=0 and tiny beta.
-            gamma2 = gamma * gamma / (gamma + 1.0)
+            _, delta = validate_beta(bx, by, bz, return_delta=True)
+            gamma = 1.0 / backend_sqrt(delta, boost_lib)
+            px, py, pz, E = boost_components(self.to_p4(), (bx, by, bz), gamma)
 
-            px = self.px + gamma2*bp*bx + gamma*bx*self.E
-            py = self.py + gamma2*bp*by + gamma*by*self.E
-            pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
-            E = gamma*(self.E + bp)
-    
             return LVec._from_owned(px, py, pz, E)
         except Exception as e:
             if isinstance(e, (InputError, DependencyError)):
@@ -439,28 +433,22 @@ class LVec:
     
     def rotx(self, angle):
         """Rotate around x-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec._from_owned(self.px,
-                   c*self.py - s*self.pz,
-                   s*self.py + c*self.pz,
-                   self.E)
-    
+        c, s = rotation_coefficients(angle)
+        py, pz = rotation_pair(self.py, self.pz, c, s)
+        return LVec._from_owned(self.px, py, pz, self.E)
+
     def roty(self, angle):
         """Rotate around y-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec._from_owned(c*self.px + s*self.pz,
-                   self.py,
-                   -s*self.px + c*self.pz,
-                   self.E)
-    
+        c, s = rotation_coefficients(angle)
+        px, pz = rotation_pair(self.px, self.pz, c, -s)
+        return LVec._from_owned(px, self.py, pz, self.E)
+
     def rotz(self, angle):
         """Rotate around z-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec._from_owned(c*self.px - s*self.py,
-                   s*self.px + c*self.py,
-                   self.pz,
-                   self.E)
-    
+        c, s = rotation_coefficients(angle)
+        px, py = rotation_pair(self.px, self.py, c, s)
+        return LVec._from_owned(px, py, self.pz, self.E)
+
     def rotate(self, angle, axis='z'):
         """
         Rotate around a specified axis.
@@ -692,16 +680,8 @@ class LVec:
         Awkward missing particles are skipped; missing events remain missing
         when reducing their particle axis. All components must share masks.
         """
-        if self._lib == 'ak':
-            import awkward as ak
-            # Construction already verified structure and missing-value masks;
-            # immutable owned components keep that invariant valid here.
-            values = self.to_p4()
-            components = [ak.sum(c, axis=axis, keepdims=keepdims,
-                                 mask_identity=False) for c in values]
-        else:
-            components = [np.sum(c, axis=axis, keepdims=keepdims)
-                          for c in self.to_p4()]
+        components = [adaptive_sum(c, axis=axis, keepdims=keepdims)
+                      for c in self.to_p4()]
         return type(self)._from_owned(*components)
 
     @classmethod
