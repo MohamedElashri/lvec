@@ -48,7 +48,7 @@ class LVec:
         except Exception as e:
             if isinstance(e, ShapeError):
                 raise
-            raise BackendError("initialization", self._lib, str(e))
+            raise BackendError("initialization", getattr(self, "_lib", "unknown"), str(e))
             
         # Initialize the enhanced caching system with memory optimization features
         self._cache = PropertyCache(max_size=max_cache_size, default_ttl=default_ttl,
@@ -499,3 +499,215 @@ class LVec:
             'fZ': to_np(self.pz),
             'fE': to_np(self.E)
         }
+
+    @property
+    def pt2(self):
+        """Squared transverse momentum, without a square root."""
+        return self._get_cached('pt2', lambda: self.px**2 + self.py**2,
+                                ['px', 'py'])
+
+    @property
+    def p2(self):
+        """Squared spatial momentum."""
+        return self._get_cached('p2', lambda: self.px**2 + self.py**2 + self.pz**2,
+                                ['px', 'py', 'pz'])
+
+    def dot(self, other):
+        """Minkowski scalar product with metric (+, -, -, -), in common units."""
+        if not isinstance(other, LVec):
+            raise TypeError("other must be an LVec")
+        return (self.E * other.E - self.px * other.px
+                - self.py * other.py - self.pz * other.pz)
+
+    @property
+    def rapidity(self):
+        """Longitudinal rapidity y = atanh(pz/E).
+
+        Lightlike beam-axis vectors have signed infinite rapidity. The zero
+        four-vector and vectors with |pz| > |E| have NaN rapidity. Missing
+        Awkward values remain missing.
+        """
+        def calculate():
+            # Subtract logarithms instead of forming their ratio. In particular,
+            # E-pz retains precision that would be lost by first forming pz/E.
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                energy = abs(self.E)
+                longitudinal = np.sign(self.E) * self.pz
+                forward = energy + longitudinal
+                backward = energy - longitudinal
+                # For overflowed sums, divide each term before adding. The
+                # common factor cancels in the logarithmic difference.
+                overflow = np.isinf(forward) | np.isinf(backward)
+                forward = backend_where(overflow, energy / 2 + longitudinal / 2,
+                                        forward, self._lib)
+                backward = backend_where(overflow, energy / 2 - longitudinal / 2,
+                                         backward, self._lib)
+                return .5 * (np.log(forward) - np.log(backward))
+        return self._get_cached('rapidity', calculate, ['pz', 'E'])
+
+    @property
+    def beta(self):
+        """Speed |p|/E in units of c; NaN when E <= 0.
+
+        Spacelike vectors can have beta > 1; this property does not reinterpret
+        them as particles. Missing Awkward values remain missing.
+        """
+        def calculate():
+            with np.errstate(divide='ignore', invalid='ignore'):
+                momentum = np.hypot(np.hypot(self.px, self.py), self.pz)
+                return backend_where(self.E > 0, np.divide(momentum, self.E),
+                                     np.nan, self._lib)
+        return self._get_cached('beta', calculate, ['px', 'py', 'pz', 'E'])
+
+    @property
+    def gamma(self):
+        """Lorentz factor E/sqrt(E²-|p|²) for future timelike vectors.
+
+        Positive-energy lightlike vectors have infinite gamma. Spacelike and
+        nonpositive-energy vectors have NaN gamma; missing values stay missing.
+        """
+        def calculate():
+            momentum = np.hypot(np.hypot(self.px, self.py), self.pz)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                # Factoring (E-p)*(E+p)/E**2 avoids overflowing squared
+                # components and preserves the representable E-p difference.
+                inverse_gamma2 = (np.divide(self.E - momentum, self.E)
+                                  * (1 + np.divide(momentum, self.E)))
+                factor = np.sqrt(backend_where(inverse_gamma2 >= 0,
+                                              inverse_gamma2, np.nan, self._lib))
+                return backend_where(self.E > 0, np.divide(1., factor),
+                                     np.nan, self._lib)
+        return self._get_cached('gamma', calculate, ['px', 'py', 'pz', 'E'])
+
+    def delta_phi(self, other):
+        """Signed self.phi - other.phi wrapped to [-pi, pi), in radians."""
+        if not isinstance(other, LVec):
+            raise TypeError("other must be an LVec")
+        return (self.phi - other.phi + np.pi) % (2 * np.pi) - np.pi
+
+    def delta_r2(self, other, *, rapidity=False):
+        """Squared angular separation: delta_eta² + delta_phi².
+
+        Set rapidity=True for delta_y² + delta_phi², which is invariant under
+        common longitudinal boosts of physical vectors. Beam-axis inf-inf
+        differences and other undefined coordinates return NaN.
+        """
+        if not isinstance(other, LVec):
+            raise TypeError("other must be an LVec")
+        with np.errstate(invalid='ignore'):
+            longitudinal = ((self.rapidity - other.rapidity) if rapidity
+                            else (self.eta - other.eta))
+            return longitudinal**2 + self.delta_phi(other)**2
+
+    def delta_r(self, other, *, rapidity=False):
+        """Angular separation; see delta_r2 for eta and rapidity conventions."""
+        return np.sqrt(self.delta_r2(other, rapidity=rapidity))
+
+    def sum(self, axis=None, *, keepdims=False):
+        """Sum four-momentum components along an array axis.
+
+        axis=None sums the whole collection; axis=-1 sums particles within each
+        event in a one-level jagged array. Empty collections yield zero vectors.
+        Awkward missing particles are skipped; missing events remain missing
+        when reducing their particle axis. All components must share masks.
+        """
+        if self._lib == 'ak':
+            import awkward as ak
+            components = [ak.sum(c, axis=axis, keepdims=keepdims,
+                                 mask_identity=False) for c in self.to_p4()]
+        else:
+            components = [np.sum(c, axis=axis, keepdims=keepdims)
+                          for c in self.to_p4()]
+        return type(self)(*components)
+
+    @classmethod
+    def from_ak_record(cls, records):
+        """Create from an Awkward Array/Record with px, py, pz, E fields."""
+        try:
+            import awkward as ak
+        except ImportError as exc:
+            raise DependencyError('awkward') from exc
+        if not isinstance(records, (ak.Array, ak.Record)):
+            raise TypeError("records must be an Awkward Array or Record")
+        required = {'px', 'py', 'pz', 'E'}
+        if not required.issubset(ak.fields(records)):
+            raise InputError('records', ak.fields(records),
+                             'Fields px, py, pz, E are required')
+        return cls(*(records[field] for field in ('px', 'py', 'pz', 'E')))
+
+    def to_ak_record(self):
+        """Export px, py, pz, E as Awkward records, preserving jagged structure.
+
+        Scalars produce an ak.Record. Array inputs produce an ak.Array with
+        missing particles represented by missing records. to_ak() retains its
+        existing dictionary return type.
+        """
+        try:
+            import awkward as ak
+        except ImportError as exc:
+            raise DependencyError('awkward') from exc
+        fields = dict(zip(('px', 'py', 'pz', 'E'), self.to_p4()))
+        if self._lib == 'np' and all(np.ndim(c) == 0 for c in self.to_p4()):
+            return ak.Record(fields)
+        return ak.zip(fields, optiontype_outside_record=True)
+
+    def boost_to_rest(self, reference=None):
+        """Boost to the rest frame of reference (self when omitted).
+
+        reference must have finite components, positive energy, and timelike
+        four-momentum at every present element. Lightlike/zero/spacelike systems
+        have no rest frame and raise InputError. Missing elements stay missing.
+        """
+        reference = self if reference is None else reference
+        if not isinstance(reference, LVec):
+            raise TypeError("reference must be an LVec")
+        momentum = np.hypot(np.hypot(reference.px, reference.py), reference.pz)
+        invalid = reference.E <= momentum
+        for component in reference.to_p4():
+            invalid = invalid | ~np.isfinite(component)
+        if reference._lib == 'ak':
+            import awkward as ak
+            has_invalid = bool(ak.any(invalid))
+        else:
+            has_invalid = bool(np.any(invalid))
+        if has_invalid:
+            raise InputError('reference', 'four-momentum',
+                             'A rest frame requires finite, positive-energy timelike momentum')
+        return self.boost(-reference.px / reference.E,
+                          -reference.py / reference.E,
+                          -reference.pz / reference.E)
+
+    def _spatial_cosine(self, other):
+        if not isinstance(other, LVec):
+            raise TypeError("other must be an LVec")
+        # Normalizing separately avoids overflow in |p1|*|p2| and dot products.
+        norm1 = np.hypot(np.hypot(self.px, self.py), self.pz)
+        norm2 = np.hypot(np.hypot(other.px, other.py), other.pz)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            cosine = sum(np.divide(a, norm1) * np.divide(b, norm2)
+                         for a, b in zip(self.to_p4()[:3], other.to_p4()[:3]))
+        return np.minimum(1.0, np.maximum(-1.0, cosine))
+
+    def opening_angle(self, other):
+        """Spatial opening angle in radians [0, pi] in the current frame.
+
+        Zero-momentum vectors have undefined direction and yield NaN. Missing
+        Awkward values stay missing. This spatial angle is frame dependent.
+        """
+        return np.arccos(self._spatial_cosine(other))
+
+    def helicity_angle(self, parent, reference):
+        """Daughter helicity angle in radians [0, pi].
+
+        self is the daughter, parent its decaying parent, and reference the
+        parent's mother, all expressed in the same frame. In the parent's rest
+        frame, measure the daughter's direction relative to the *opposite* of
+        the reference momentum. This fixes the otherwise ambiguous sign of the
+        helicity axis. A zero axis/daughter direction yields NaN; an invalid
+        parent rest frame raises InputError.
+        """
+        if not isinstance(parent, LVec) or not isinstance(reference, LVec):
+            raise TypeError("parent and reference must be LVec objects")
+        daughter_rest = self.boost_to_rest(parent)
+        reference_rest = reference.boost_to_rest(parent)
+        return np.arccos(-daughter_rest._spatial_cosine(reference_rest))
