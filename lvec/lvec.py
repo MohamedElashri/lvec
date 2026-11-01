@@ -99,11 +99,17 @@ class LVec:
         
     @classmethod
     def _from_owned(cls, px, py, pz, E, max_cache_size=None, default_ttl=None,
-                    *, validate=False, cache_intermediates=False, cache_stats=True):
+                    *, validate=False, cache_intermediates=False, cache_stats=True,
+                    _trusted_awkward=False):
         """Construct from fresh results or existing immutable owned buffers.
 
         Private trusted path: never pass caller-owned mutable arrays here.
         Public construction always takes independent component snapshots.
+
+        _trusted_awkward additionally requires a producer that proves all four
+        layouts agree and every buffer is fresh or belongs to an owned input.
+        General indexing and array-valued rotation/scaling retain snapshots:
+        their result structure may alias an external selector or parameter.
         """
         if cls is not LVec:
             # Preserve custom subclass initialization behavior.
@@ -111,7 +117,13 @@ class LVec:
                        default_ttl=default_ttl, validate=validate,
                        cache_intermediates=cache_intermediates, cache_stats=cache_stats)
         result = cls.__new__(cls)
-        result._initialize_components(px, py, pz, E, trusted=True)
+        components = (px, py, pz, E)
+        if _trusted_awkward and all(is_ak(value) for value in components):
+            result._lib = 'ak'
+            result._px, result._py, result._pz, result._E = tuple(
+                freeze_array(value) for value in components)
+        else:
+            result._initialize_components(*components, trusted=True)
         result._initialize_cache(max_cache_size, default_ttl,
                                  cache_intermediates=cache_intermediates,
                                  cache_stats=cache_stats)
@@ -388,17 +400,20 @@ class LVec:
     def __add__(self, other):
         """Add two Lorentz vectors."""
         return LVec._from_owned(self.px + other.px, self.py + other.py,
-                   self.pz + other.pz, self.E + other.E)
+                   self.pz + other.pz, self.E + other.E,
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and type(other) is LVec)
     
     def __sub__(self, other):
         """Subtract two Lorentz vectors."""
         return LVec._from_owned(self.px - other.px, self.py - other.py,
-                   self.pz - other.pz, self.E - other.E)
+                   self.pz - other.pz, self.E - other.E,
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and type(other) is LVec)
     
     def __mul__(self, scalar):
         """Multiply by scalar."""
         return LVec._from_owned(scalar * self.px, scalar * self.py,
-                   scalar * self.pz, scalar * self.E)
+                   scalar * self.pz, scalar * self.E,
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and np.isscalar(scalar))
     
     __rmul__ = __mul__
     
@@ -425,7 +440,10 @@ class LVec:
             gamma = 1.0 / backend_sqrt(delta, boost_lib)
             px, py, pz, E = boost_components(self.to_p4(), (bx, by, bz), gamma)
 
-            return LVec._from_owned(px, py, pz, E)
+            # Beta components were snapshotted above; result metadata can only
+            # refer to those owned buffers, this collection, or fresh outputs.
+            return LVec._from_owned(px, py, pz, E,
+                       _trusted_awkward=self._lib == 'ak' and type(self) is LVec)
         except Exception as e:
             if isinstance(e, (InputError, DependencyError)):
                 raise
@@ -439,19 +457,22 @@ class LVec:
         """Rotate around x-axis."""
         c, s = rotation_coefficients(angle)
         py, pz = rotation_pair(self.py, self.pz, c, s)
-        return LVec._from_owned(self.px, py, pz, self.E)
+        return LVec._from_owned(self.px, py, pz, self.E,
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and np.isscalar(angle))
 
     def roty(self, angle):
         """Rotate around y-axis."""
         c, s = rotation_coefficients(angle)
         px, pz = rotation_pair(self.px, self.pz, c, -s)
-        return LVec._from_owned(px, self.py, pz, self.E)
+        return LVec._from_owned(px, self.py, pz, self.E,
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and np.isscalar(angle))
 
     def rotz(self, angle):
         """Rotate around z-axis."""
         c, s = rotation_coefficients(angle)
         px, py = rotation_pair(self.px, self.py, c, s)
-        return LVec._from_owned(px, py, self.pz, self.E)
+        return LVec._from_owned(px, py, self.pz, self.E,
+                   _trusted_awkward=self._lib == 'ak' and type(self) is LVec and np.isscalar(angle))
 
     def rotate(self, angle, axis='z'):
         """
@@ -686,6 +707,8 @@ class LVec:
         """
         components = [adaptive_sum(c, axis=axis, keepdims=keepdims)
                       for c in self.to_p4()]
+        if type(self) is LVec and self._lib == 'ak':
+            return LVec._from_owned(*components, _trusted_awkward=True)
         return type(self)._from_owned(*components)
 
     @classmethod

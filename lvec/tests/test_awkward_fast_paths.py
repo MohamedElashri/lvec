@@ -208,3 +208,110 @@ def test_scalar_boost_parameters_are_views_and_recovery_remains_selective(ak, mo
 def test_scalar_boost_preserves_empty_and_all_missing_arrays(ak, values):
     v = LVec(*(ak.Array(values) for _ in range(4)))
     assert all(ak.to_list(component) == values for component in v.boost(.1, .2, .3).to_p4())
+
+
+@pytest.mark.parametrize('kind', ['regular', 'lists', 'sliced', 'list_array', 'indexed',
+                                 'byte_mask', 'bit_mask', 'missing', 'deep'])
+def test_owned_results_preserve_physics_structure_and_readonly_components(ak, kind):
+    p = np.arange(24, dtype=float).reshape(3, 8) / 8
+    energy = np.sqrt(np.sum(p * p, axis=0) + 4.)
+    data = tuple(shaped(ak, c, kind) for c in (*p, energy))
+    v = LVec(*data)
+    before = tuple(ak.to_list(c) for c in v.to_p4())
+    for result, expected_mass in [(v + v, 4.), (v * 2., 4.), (v - v, 0.),
+                                  (v.boost(.2, -.1, .3), 2.),
+                                  (v.rotx(.3).roty(-.2).rotz(.1), 2.)]:
+        reference = ak.ones_like(data[0]) * expected_mass
+        assert ak.to_list(ak.ones_like(result.mass)) == ak.to_list(ak.ones_like(reference))
+        np.testing.assert_allclose(ak.to_numpy(ak.flatten(result.mass, axis=None)),
+                                   ak.to_numpy(ak.flatten(reference, axis=None)), atol=2e-13)
+        for component in result.to_p4():
+            _, _, buffers = ak.to_buffers(component)
+            assert all(not buffer.flags.writeable for buffer in buffers.values())
+            assert all(buffer.dtype == np.float64 for key, buffer in buffers.items()
+                       if key.endswith('-data'))
+    total = v.sum(axis=-1)
+    for actual, source in zip(total.to_p4(), data):
+        expected = ak.sum(source, axis=-1)
+        if isinstance(expected, ak.Array):
+            assert ak.to_list(ak.ones_like(actual)) == ak.to_list(ak.ones_like(expected))
+            np.testing.assert_allclose(ak.to_numpy(ak.flatten(actual, axis=None)),
+                                       ak.to_numpy(ak.flatten(expected, axis=None)))
+        else:
+            np.testing.assert_allclose(actual, expected)
+    assert before == tuple(ak.to_list(c) for c in v.to_p4())
+
+
+def test_owned_results_reuse_safe_buffers_and_public_construction_still_snapshots(ak, monkeypatch):
+    import lvec.lvec as implementation
+    v = LVec(*(ak.Array([[x, None], [], [x]]) for x in (1., 2., 3., 5.)))
+    original = implementation.own_components
+
+    def snapshots_only_scalars(*components):
+        assert all(np.isscalar(value) for value in components)
+        return original(*components)
+
+    monkeypatch.setattr(implementation, 'own_components', snapshots_only_scalars)
+    results = [v + v, v - v, v * 2., v.boost(.1, .2, .3), v.rotx(.3), v.sum(-1)]
+    for source, reused in [(v.px, results[4].px), (v.E, results[4].E)]:
+        assert np.shares_memory(ak.to_layout(source).content.content.data,
+                               ak.to_layout(reused).content.content.data)
+    monkeypatch.setattr(implementation, 'own_components', original)
+    offsets = np.array([0, 2, 2, 3])
+    values = np.array([1., 2., 3.])
+    external = ak.Array(ak.contents.ListOffsetArray(ak.index.Index64(offsets),
+                                                 ak.contents.NumpyArray(values)))
+    for factory in (LVec, LVec._from_owned):
+        copied = factory(external, external, external, external)
+        assert not np.shares_memory(copied.px.layout.content.data, values)
+        assert not np.shares_memory(copied.px.layout.offsets.data, offsets)
+    assert values.flags.writeable and offsets.flags.writeable
+
+
+@pytest.mark.parametrize('operation', ['boost', 'rotation', 'scale', 'index'])
+def test_external_parameter_buffers_cannot_mutate_results(ak, operation):
+    offsets = np.array([0, 2, 2, 3])
+    values = np.array([.1, .2, .3])
+    parameter = ak.Array(ak.contents.ListOffsetArray(ak.index.Index64(offsets),
+                                                  ak.contents.NumpyArray(values)))
+    v = LVec(*(ak.Array([[x, x], [], [x]]) for x in (1., 2., 3., 5.)))
+    if operation == 'boost':
+        result = v.boost(parameter, 0., 0.)
+    elif operation == 'rotation':
+        result = v.rotz(parameter)
+    elif operation == 'scale':
+        result = v * parameter
+    else:
+        # An indexed selection can retain a caller-owned integer buffer.
+        values = np.array([2, 0], dtype=np.int64)
+        result = v[ak.Array(values)]
+    before = tuple(ak.to_list(c) for c in result.to_p4())
+    mass = ak.to_list(result.mass)
+    assert values.flags.writeable and offsets.flags.writeable
+    values[:] = 0
+    offsets[1] = 1
+    result.clear_cache()
+    assert before == tuple(ak.to_list(c) for c in result.to_p4())
+    assert mass == ak.to_list(result.mass)
+
+
+def test_subclasses_retain_constructor_and_reduction_behavior(ak):
+    class Child(LVec):
+        def __init__(self, *components, **kwargs):
+            super().__init__(*components, **kwargs)
+            self.initialized = True
+
+    v = Child(*(ak.Array([[x], []]) for x in (1., 2., 3., 5.)))
+    assert isinstance(v.sum(-1), Child) and v.sum(-1).initialized
+    result = Child._from_owned(*v.to_p4(), _trusted_awkward=True)
+    assert isinstance(result, Child) and result.initialized
+
+
+def test_owned_arithmetic_handles_different_input_masks_and_mixed_backends(ak):
+    a = LVec(*(ak.Array([[value, None], [value], None, []]) for value in (1., 2., 3., 5.)))
+    b = LVec(*(ak.Array([[None, value], [value], None, []]) for value in (2., 1., 3., 7.)))
+    scalar = LVec(1., 2., 3., 5.)
+    for left, right in [(a, b), (a, scalar), (scalar, a)]:
+        for result, sign in [(left + right, 1), (left - right, -1)]:
+            for actual, x, y in zip(result.to_p4(), left.to_p4(), right.to_p4()):
+                assert ak.to_list(actual) == ak.to_list(x + sign * y)
