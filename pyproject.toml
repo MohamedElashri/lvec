@@ -3,7 +3,7 @@ name = "lvec"
 version = "0.1.4"
 description = "A package for handling Lorentz vectors with NumPy and Awkward array backends"
 readme = "README.md"
-requires-python = ">=3.10"  # This will be revisited later due to numpy 2.2.4 requirement
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
     { name = "Mohamed Elashri", email = "lvec@elashri.com" }
@@ -16,20 +16,22 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
-    "numpy>=1.20.0",
-    "awkward>=2.0.0",
+    "numpy>=2.2.4",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "uproot>=5.0.0",
-]
+awkward = ["awkward>=2.7.4"]
+test = ["pytest>=8.3.5"]
+examples = ["awkward>=2.7.4", "uproot>=5.0.0", "matplotlib>=3.10.1"]
+benchmark = ["awkward>=2.7.4", "vector>=1.6.1", "matplotlib>=3.10.1", "memory-profiler>=0.61.0", "uproot>=5.0.0"]
+dev = ["lvec[awkward,test,examples,benchmark]"]
 
 [project.urls]
 Homepage = "https://github.com/MohamedElashri/lvec"
@@ -50,9 +52,4 @@ addopts = "-v"
 packages = ["lvec"]
 
 [dependency-groups]
-dev = [
-    "matplotlib>=3.10.1",
-    "memory-profiler>=0.61.0",
-    "pytest>=8.3.5",
-    "vector>=1.6.1",
-]
+dev = ["lvec[dev]"]
