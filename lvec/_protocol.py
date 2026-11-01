@@ -58,12 +58,16 @@ class PlanarAPI:
     def _components(self):
         return (self.x, self.y)
 
-    def _new(self, *components):
+    def _new(self, *components, _trusted_awkward=False):
         return type(self)(*components)
 
     def _check_other(self, other):
         if not isinstance(other, PlanarAPI) or self._dimension != other._dimension:
             raise TypeError("Vector operands must have the same dimension; use to_2D/to_3D/to_4D explicitly")
+
+    def _derived(self,name,compute,indices):
+        names=('px','py','pz','E') if self._dimension==4 else ('x','y','z')
+        return self._get_cached(name,compute,[names[i] for i in indices])
 
     def add(self, other):
         return self + other
@@ -234,7 +238,7 @@ class PlanarAPI:
 
     @property
     def rho2(self):
-        return squared_sum(self.x,self.y)
+        return self._derived('rho2',lambda:squared_sum(self.x,self.y),(0,1))
 
     @property
     def _norm2(self):
@@ -247,9 +251,8 @@ class PlanarAPI:
 
     @property
     def lib(self):
-        if self._lib=='ak':
-            import awkward as ak
-            return ak
+        # Both supported backends use NumPy's dispatchable mathematical ufuncs.
+        # The awkward module itself does not provide sqrt/sin/etc.
         return np
 
     @classmethod
@@ -319,21 +322,19 @@ class PlanarAPI:
         Nonzero null 4-vectors have no finite normalization. Their nonzero
         components become signed infinities and their zero components stay zero.
         """
+        from ._transform import normalize
+        values=normalize(self._components(),self._dimension)
         if self._dimension==4:
-            norm=abs(self.mass)
-            with np.errstate(divide='ignore',invalid='ignore'):
-                values=[backend_where((c==0)&(norm==0),0.,np.divide(c,norm),self._lib)
-                        for c in self._components()]
-        else:
-            values=directions(self._components())
-            zero=True
-            for c in self._components():zero=zero&(c==0)
-            values=[backend_where(zero,0.,c,self._lib) for c in values]
+            from .lvec import LVec
+            if type(self) is LVec:
+                # This kernel uses only owned inputs and fresh arithmetic.
+                return LVec._from_owned(*values,_trusted_awkward=True)
         return self._new(*values)
 
     def scale2D(self,factor):
-        values=self._components()
-        return self._new(*(c*factor if i<2 else c for i,c in enumerate(values)))
+        from ._transform import scale
+        values,trusted=scale(self._components(),2,factor)
+        return self._new(*values,_trusted_awkward=trusted)
 
     neg2D=property(lambda self:self.scale2D(-1))
 
@@ -365,7 +366,8 @@ class PlanarAPI:
 
     def transform2D(self,obj):
         from ._transform import transform
-        return self._new(*transform(self._components(),obj,2))
+        values,trusted=transform(self._components(),obj,2)
+        return self._new(*values,_trusted_awkward=trusted)
 
 
 class SpatialAPI(PlanarAPI):
@@ -378,7 +380,7 @@ class SpatialAPI(PlanarAPI):
         return self.mag
 
     mag = property(lambda self: self.r)
-    mag2 = property(lambda self: squared_sum(self.x,self.y,self.z))
+    mag2 = property(lambda self:self._derived('mag2',lambda:squared_sum(self.x,self.y,self.z),(0,1,2)))
     p = property(lambda self: self.mag)
     p2 = property(lambda self: self.mag2)
     pz = property(lambda self: self.z)
@@ -387,27 +389,31 @@ class SpatialAPI(PlanarAPI):
     @property
     def eta(self):
         # Share LVec's range-aware beam/zero convention without a 4D wrapper.
-        with np.errstate(divide='ignore',invalid='ignore',over='ignore'):
-            rho=self.rho
-            value=np.arcsinh(np.divide(self.z,rho))
-            fallback=np.sign(self.z)*(np.log(abs(self.z))-np.log(rho)+np.log(2.))
-            value=backend_where(np.isinf(value)&np.isfinite(self.z)&(rho>0),fallback,value,self._lib)
-            return backend_where(rho==0,backend_where(self.z==0,0.,backend_where(self.z>0,np.inf,-np.inf,self._lib),self._lib),value,self._lib)
+        def calculate():
+            with np.errstate(divide='ignore',invalid='ignore',over='ignore'):
+                rho=self.rho
+                value=np.arcsinh(np.divide(self.z,rho))
+                fallback=np.sign(self.z)*(np.log(abs(self.z))-np.log(rho)+np.log(2.))
+                value=backend_where(np.isinf(value)&np.isfinite(self.z)&(rho>0),fallback,value,self._lib)
+                return backend_where(rho==0,backend_where(self.z==0,0.,backend_where(self.z>0,np.inf,-np.inf,self._lib),self._lib),value,self._lib)
+        return self._derived('eta',calculate,(0,1,2))
 
     pseudorapidity=property(lambda self:self.eta)
 
     @property
     def costheta(self):
         with np.errstate(divide='ignore',invalid='ignore'):
-            return np.cos(self.theta)
+            return self._derived('costheta',lambda:np.cos(self.theta),(0,1,2))
 
     @property
     def cottheta(self):
         with np.errstate(divide='ignore',invalid='ignore',over='ignore',under='ignore'):
-            return np.divide(self.z,self.rho)
+            return self._derived('cottheta',lambda:np.divide(self.z,self.rho),(0,1,2))
 
     def scale3D(self,factor):
-        return self._new(*(c*factor if i<3 else c for i,c in enumerate(self._components())))
+        from ._transform import scale
+        values,trusted=scale(self._components(),3,factor)
+        return self._new(*values,_trusted_awkward=trusted)
 
     neg3D=property(lambda self:self.scale3D(-1))
 
@@ -457,7 +463,8 @@ class SpatialAPI(PlanarAPI):
 
     def transform3D(self,obj):
         from ._transform import transform
-        return self._new(*transform(self._components(),obj,3))
+        values,trusted=transform(self._components(),obj,3)
+        return self._new(*values,_trusted_awkward=trusted)
 
     def rotate_axis(self,axis,angle):
         """Active right-handed rotation around a nonzero 3D direction."""
@@ -512,9 +519,25 @@ class LorentzAPI(SpatialAPI):
     def _components(self):
         return self.px, self.py, self.pz, self.E
 
-    def _new(self, *components):
-        # New generic producers have not proved buffer ownership. Keep the
-        # public snapshot path; existing specialized methods keep their paths.
+    def _new(self, *components, _trusted_awkward=False):
+        # These internal producers supply arithmetic results or owned component
+        # views. NumPy shape metadata is immutable. Awkward structural buffers
+        # may come from external parameters and must be snapshotted separately.
+        from .lvec import LVec
+        if type(self) is LVec:
+            if all(is_ak(c) for c in components):
+                if _trusted_awkward:
+                    return LVec._from_owned(*components,_trusted_awkward=True)
+                from .utils import ensure_array
+                from .backends import own_computed_structure
+                *values,lib=ensure_array(*components)
+                result=LVec.__new__(LVec)
+                result._px,result._py,result._pz,result._E=map(own_computed_structure,values)
+                result._lib=lib
+                result._initialize_cache()
+                return result
+            if not any(is_ak(c) for c in components):
+                return LVec._from_owned(*components)
         return type(self)(*components)
 
     def __abs__(self):
@@ -536,28 +559,28 @@ class LorentzAPI(SpatialAPI):
     M2 = m2 = property(lambda self: self.mass2)
     _norm2 = property(lambda self: self.mass2)
 
-    theta=property(lambda self:np.arctan2(self.pt,self.pz))
-    t2=property(lambda self:squared_sum(self.E))
+    theta=property(lambda self:self._derived('theta',lambda:np.arctan2(self.pt,self.pz),(0,1,2)))
+    t2=property(lambda self:self._derived('t2',lambda:squared_sum(self.E),(3,)))
     E2=e2=energy2=property(lambda self:self.t2)
 
     @property
     def Et(self):
         with np.errstate(divide='ignore',invalid='ignore'):
-            return self.E*np.sin(self.theta)
+            return self._derived('Et',lambda:self.E*np.sin(self.theta),(0,1,2,3))
 
-    Et2=property(lambda self:squared_sum(self.Et))
+    Et2=property(lambda self:self._derived('Et2',lambda:squared_sum(self.Et),(0,1,2,3)))
     et=transverse_energy=property(lambda self:self.Et)
     et2=transverse_energy2=property(lambda self:self.Et2)
 
     @property
     def Mt2(self):
-        return signed_norm(self.E,self.pz,0.*self.pz,0.*self.pz,squared=True)
+        return self._derived('Mt2',lambda:signed_norm(self.E,self.pz,0.*self.pz,0.*self.pz,squared=True),(2,3))
 
     @property
     def Mt(self):
         # The signed square-root convention extends transverse mass to
         # spacelike inputs, matching the invariant-mass convention.
-        return signed_norm(self.E,self.pz,0.*self.pz,0.*self.pz)
+        return self._derived('Mt',lambda:signed_norm(self.E,self.pz,0.*self.pz,0.*self.pz),(2,3))
 
     mt=transverse_mass=property(lambda self:self.Mt)
     mt2=transverse_mass2=property(lambda self:self.Mt2)
@@ -613,7 +636,8 @@ class LorentzAPI(SpatialAPI):
             raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
         if direction==-1 and self is p4:
             return self._new(*(c*0. for c in self._components()[:3]),mass)
-        return self._new(*reference_boost(self._components(),p4._components(),mass,direction))
+        trusted=all(not is_ak(c) and np.ndim(c)==0 for c in p4._components())
+        return self._new(*reference_boost(self._components(),p4._components(),mass,direction),_trusted_awkward=trusted)
 
     def boost_p4(self,p4):
         """Active boost from a future timelike p4, without converting to beta."""
@@ -641,7 +665,8 @@ class LorentzAPI(SpatialAPI):
         gamma=ensure_array(normalize_scalar(gamma))[0]
         if backend_any(~np.isfinite(gamma)|(abs(gamma)<1)):
             raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
-        return self._new(*gamma_axis_boost(self._components(),gamma,axis))
+        trusted=not is_ak(gamma) and np.ndim(gamma)==0
+        return self._new(*gamma_axis_boost(self._components(),gamma,axis),_trusted_awkward=trusted)
 
     def boostX(self,beta=None,gamma=None):
         return self._boost_axis(0,beta,gamma)
@@ -654,7 +679,8 @@ class LorentzAPI(SpatialAPI):
 
     def transform4D(self,obj):
         from ._transform import transform
-        return self._new(*transform(self._components(),obj,4))
+        values,trusted=transform(self._components(),obj,4)
+        return self._new(*values,_trusted_awkward=trusted)
 
 
 from ._coordinates import install_conversions

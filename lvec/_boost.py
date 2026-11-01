@@ -4,6 +4,7 @@ from decimal import Context, Decimal, localcontext
 import numpy as np
 
 from ._adaptive import _dispatch
+from ._transform import dispatch_parameters, _bound
 
 
 def _context(values):
@@ -45,24 +46,33 @@ def reference_boost(values, reference, mass, direction=1):
                     for result,value in zip(out,corrected):result.flat[i]=float(value)
         return tuple(out)
     kernel.outputs=4
-    return _dispatch(kernel,*values,*reference,mass)
+    return dispatch_parameters(kernel,values,(*reference,mass))
 
 
 def gamma_axis_boost(values, signed_gamma, axis):
     def kernel(px,py,pz,e,parameter):
         p=(px,py,pz)[axis]
+        original_parameter=parameter
+        if parameter.size and not any(parameter.strides):parameter=float(parameter.flat[0])
         with np.errstate(over='ignore',under='ignore',invalid='ignore'):
             g=abs(parameter)
             u=np.copysign(np.sqrt(g-1)*np.sqrt(g+1),parameter)
             spatial=g*p+u*e
             energy=g*e+u*p
+            if np.isscalar(g) and g<=1e4:
+                bound=abs(g)*_bound(p)+abs(u)*_bound(e)
+                threshold=max(np.finfo(float).tiny,np.sqrt(np.finfo(float).eps)*bound)
+                if all(np.min(abs(result),initial=np.inf)>threshold
+                       and np.max(abs(result),initial=0.)<np.inf for result in (spatial,energy)):
+                    out=[px,py,pz,energy];out[axis]=spatial
+                    return tuple(out)
             risk=(g>1e4)|~np.isfinite(spatial)|~np.isfinite(energy)
             for result,bound in ((spatial,abs(g*p)+abs(u*e)),(energy,abs(g*e)+abs(u*p))):
                 risk=risk|((abs(result)<=np.sqrt(np.finfo(float).eps)*bound)&(bound!=0))
             risk=risk&np.isfinite(p)&np.isfinite(e)
         spatial,energy=np.asarray(spatial).copy(),np.asarray(energy).copy()
         for i in np.flatnonzero(risk):
-            row=[float(x.flat[i]) for x in (p,e,parameter)]
+            row=[float(x.flat[i]) for x in (p,e,original_parameter)]
             with _context(row):
                 q,t,parameter_d=map(Decimal.from_float,row)
                 g=abs(parameter_d)
@@ -73,4 +83,4 @@ def gamma_axis_boost(values, signed_gamma, axis):
         out[axis]=spatial
         return tuple(out)
     kernel.outputs=4
-    return _dispatch(kernel,*values,signed_gamma)
+    return dispatch_parameters(kernel,values,(signed_gamma,))

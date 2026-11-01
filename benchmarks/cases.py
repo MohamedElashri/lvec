@@ -7,12 +7,23 @@ from typing import Callable
 
 import numpy as np
 
-from lvec import LVec
+from lvec import LVec, Vector3D
 
 
 LAYOUTS = ("numpy", "strided", "jagged", "missing", "deep", "heavy-tail", "extreme")
 BETA = (.1, .05, .02)
 ANGLE = .47
+EULER = (.2, .3, .4)
+# Independent elementary matrices for ROOT/vector's zxz Euler convention.
+def _z(angle):
+    c,s=np.cos(angle),np.sin(angle)
+    return np.array([[c,-s,0.],[s,c,0.],[0.,0.,1.]])
+def _x(angle):
+    c,s=np.cos(angle),np.sin(angle)
+    return np.array([[1.,0.,0.],[0.,c,-s],[0.,s,c]])
+EULER_MATRIX = _z(-EULER[2]) @ _x(-EULER[1]) @ _z(-EULER[0])
+MATRIX4 = {a+b: (float(i+2) if a==b else 0.)
+           for i,a in enumerate('xyzt') for b in 'xyzt'}
 
 
 @dataclass
@@ -130,6 +141,24 @@ def core_cases(layout, size, seed, compare_vector=False):
                 return Case(name, lambda: construct().tau,
                             lambda r: assert_values(r, mass_reference()))
             other = construct()
+            def check_vector(r,expected):
+                for value,wanted in zip((r.x,r.y,r.z,r.t),expected):
+                    assert_values(value,wanted)
+            if name == 'vector.unit_cold':
+                return Case(name,lambda:other.unit(),lambda r:check_vector(r,tuple(c/2 for c in data)))
+            if name == 'vector.rotate_axis':
+                axis=vector.obj(x=1.,y=1.,z=1.)
+                return Case(name,lambda:other.rotate_axis(axis,2*np.pi/3),
+                            lambda r:check_vector(r,(pz,px,py,energy)))
+            if name == 'vector.rotate_euler':
+                expected=tuple(sum(EULER_MATRIX[i,j]*data[j] for j in range(3)) for i in range(3))+(energy,)
+                return Case(name,lambda:other.rotate_euler(*EULER),lambda r:check_vector(r,expected))
+            if name == 'vector.boost_gamma':
+                return Case(name,lambda:other.boostX(gamma=1/np.sqrt(1-.2**2)),
+                            lambda r:check_vector(r,boost_reference(data,(.2,0.,0.))))
+            if name == 'vector.matrix4d':
+                return Case(name,lambda:other.transform4D(MATRIX4),
+                            lambda r:check_vector(r,tuple((i+2)*c for i,c in enumerate(data))))
             if name == "vector.mass":
                 return Case(name, lambda: other.tau,
                             lambda r: assert_values(r, mass_reference()))
@@ -154,6 +183,27 @@ def core_cases(layout, size, seed, compare_vector=False):
         options = ({"max_cache_size": 0} if name == "mass_uncached" else
                    {"cache_intermediates": True} if name == "properties_intermediates" else {})
         v = LVec(*data, **options)
+        if name == 'unit_cold':
+            def unit():
+                v.clear_cache()
+                return v.unit()
+            return Case(name,unit,lambda r:check_components(r,tuple(c/2 for c in data)))
+        if name == 'rotate_axis':
+            axis=Vector3D(1.,1.,1.)
+            return Case(name,lambda:v.rotate_axis(axis,2*np.pi/3),
+                        lambda r:check_components(r,(pz,px,py,energy)))
+        if name == 'rotate_euler':
+            expected=tuple(sum(EULER_MATRIX[i,j]*data[j] for j in range(3)) for i in range(3))+(energy,)
+            return Case(name,lambda:v.rotate_euler(*EULER),lambda r:check_components(r,expected))
+        if name == 'boost_gamma':
+            return Case(name,lambda:v.boostX(gamma=1/np.sqrt(1-.2**2)),
+                        lambda r:check_components(r,boost_reference(data,(.2,0.,0.))))
+        if name == 'matrix4d':
+            return Case(name,lambda:v.transform4D(MATRIX4),
+                        lambda r:check_components(r,tuple((i+2)*c for i,c in enumerate(data))))
+        if name == 'record_mass':
+            records=v.to_ak_record(with_behavior=True)
+            return Case(name,lambda:records.mass,lambda r:assert_values(r,mass_reference()))
         if name == "mass_hot":
             v.mass
         if name in {"mass_cold", "mass_hot", "mass_uncached"}:
@@ -189,9 +239,13 @@ def core_cases(layout, size, seed, compare_vector=False):
                     lambda r: assert_values(r, 2 * mass_reference()))
 
     names = ["construct", "mass_cold", "mass_hot", "mass_uncached", "properties",
-             "properties_intermediates", "add", "boost", "rotate", "sum", "workflow"]
+             "properties_intermediates", "add", "boost", "rotate", "sum", "workflow",
+             "unit_cold", "rotate_axis", "rotate_euler", "boost_gamma", "matrix4d"]
+    if layout in {'jagged','missing','deep','heavy-tail'}:
+        names += ['record_mass']
     if compare_vector and layout in {"numpy", "jagged"}:
-        names += ["construct_mass", "vector.construct", "vector.construct_mass", "vector.mass", "vector.workflow"]
+        names += ["construct_mass", "vector.construct", "vector.construct_mass", "vector.mass", "vector.workflow",
+                  'vector.unit_cold','vector.rotate_axis','vector.rotate_euler','vector.boost_gamma','vector.matrix4d']
     return [CaseSpec(name, lambda name=name: prepare(name)) for name in names], metadata
 
 
