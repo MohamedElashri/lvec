@@ -153,3 +153,58 @@ def test_mass_leaf_kernel_preserves_nonfinite_values(ak):
         assert np.isnan(actual[:2]).all()
         assert actual[2] == np.inf
         assert actual[3] == 0.
+
+
+@pytest.mark.parametrize('kind', ['regular', 'lists', 'sliced', 'list_array', 'indexed',
+                                 'byte_mask', 'bit_mask', 'missing', 'deep'])
+@pytest.mark.parametrize('beta', [(0., 0., 0.), (.1, -.2, .3), (-.9, 0., 0.),
+                                 (.28, .96, 0.), (np.nextafter(1., 0.), 0., 0.)])
+def test_scalar_boost_leaves_match_decimal_across_layouts(ak, kind, beta):
+    from .test_adaptive_precision import boost_reference
+    data = np.array([(1., 2., 3., 5.), (0., 0., 0., 0.), (1., 0., 0., 1.),
+                     (1e308, 1., 0., 1e308), (1e-310, 2e-310, 0., 4e-310),
+                     (-1e308, 0., 1., 1e308), (2., 3., 1., 4.),
+                     (3e100, 4e100, 1., 5e100)])
+    expected = np.asarray([boost_reference(row, beta) for row in data])
+    v = LVec(*(shaped(ak, component, kind) for component in data.T))
+    with np.errstate(all='raise'):
+        boosted = v.boost(*beta)
+    for component, wanted in zip(boosted.to_p4(), expected.T):
+        reference = shaped(ak, wanted, kind)
+        assert ak.to_list(ak.ones_like(component)) == ak.to_list(ak.ones_like(reference))
+        np.testing.assert_allclose(ak.to_numpy(ak.flatten(component, axis=None)),
+                                   ak.to_numpy(ak.flatten(reference, axis=None)),
+                                   rtol=3e-14, atol=5e-324)
+
+
+def test_scalar_boost_parameters_are_views_and_recovery_remains_selective(ak, monkeypatch):
+    from lvec import _adaptive
+    original = _adaptive._boost_numpy
+    original_recover = _adaptive._boost_decimal
+    recoveries = []
+    calls = []
+
+    def checked(*args):
+        for parameter in args[4:]:
+            assert parameter.shape == args[0].shape
+            assert all(stride == 0 for stride in parameter.strides)
+        calls.append(None)
+        return original(*args)
+
+    def recover(row):
+        recoveries.append(None)
+        return original_recover(row)
+
+    monkeypatch.setattr(_adaptive, '_boost_numpy', checked)
+    monkeypatch.setattr(_adaptive, '_boost_decimal', recover)
+    x = ak.Array([[1., None], [], None, [1e308]])
+    v = LVec(x, 0., 0., ak.Array([[5., None], [], None, [1e308]]))
+    result = v.boost(-.9, 0., 0.)
+    assert calls and len(recoveries) == 1
+    assert np.isfinite(ak.to_numpy(ak.flatten(result.E, axis=None))).all()
+
+
+@pytest.mark.parametrize('values', [[], [[], []], [None, None], [[None], [], None]])
+def test_scalar_boost_preserves_empty_and_all_missing_arrays(ak, values):
+    v = LVec(*(ak.Array(values) for _ in range(4)))
+    assert all(ak.to_list(component) == values for component in v.boost(.1, .2, .3).to_p4())
