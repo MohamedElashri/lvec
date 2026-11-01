@@ -9,9 +9,10 @@ from .caching import PropertyCache
 from .frame import Frame
 from ._adaptive import rotation_pair, rotation_coefficients, boost_components, adaptive_sum
 import numpy as np
+from ._protocol import LorentzAPI
 
 
-class LVec:
+class LVec(LorentzAPI):
     """
     Lorentz Vector class supporting both NumPy and Awkward array backends.
     
@@ -399,12 +400,14 @@ class LVec:
 
     def __add__(self, other):
         """Add two Lorentz vectors."""
+        self._check_other(other)
         return LVec._from_owned(self.px + other.px, self.py + other.py,
                    self.pz + other.pz, self.E + other.E,
                    _trusted_awkward=self._lib == 'ak' and type(self) is LVec and type(other) is LVec)
     
     def __sub__(self, other):
         """Subtract two Lorentz vectors."""
+        self._check_other(other)
         return LVec._from_owned(self.px - other.px, self.py - other.py,
                    self.pz - other.pz, self.E - other.E,
                    _trusted_awkward=self._lib == 'ak' and type(self) is LVec and type(other) is LVec)
@@ -698,7 +701,7 @@ class LVec:
         """Angular separation; see delta_r2 for eta and rapidity conventions."""
         return np.sqrt(self.delta_r2(other, rapidity=rapidity))
 
-    def sum(self, axis=None, *, keepdims=False):
+    def sum(self, axis=None, dtype=None, out=None, keepdims=False, *, initial=None, where=None):
         """Sum four-momentum components along an array axis.
 
         axis=None sums the whole collection; axis=-1 sums particles within each
@@ -706,6 +709,7 @@ class LVec:
         Awkward missing particles are skipped; missing events remain missing
         when reducing their particle axis. All components must share masks.
         """
+        self._validate_reduction(dtype, out, initial, where)
         components = [adaptive_sum(c, axis=axis, keepdims=keepdims)
                       for c in self.to_p4()]
         if type(self) is LVec and self._lib == 'ak':

@@ -149,6 +149,10 @@ observed dispersion; they describe particular workloads on one machine.
 
 ## Development
 
+The [feature parity audit](docs/vector-feature-parity.md) compares the public
+mathematical capabilities of Scikit-HEP `vector` with LVec, records semantic
+differences, and defines a sequential roadmap toward core numerical parity.
+
 ```bash
 python -m pip install -e ".[awkward,test,benchmark]"
 python -m pytest -W error::RuntimeWarning

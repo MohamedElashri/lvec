@@ -6,8 +6,9 @@ from .utils import (ensure_array, check_shapes, compute_pt, compute_p)
 from .exceptions import ShapeError, InputError, BackendError
 from .caching import PropertyCache
 from ._adaptive import rotation_pair, rotation_coefficients
+from ._protocol import PlanarAPI, SpatialAPI
 
-class Vec2D:
+class Vec2D(PlanarAPI):
     """2D Vector class supporting both NumPy and Awkward array backends.
     
     Attributes:
@@ -120,10 +121,12 @@ class Vec2D:
     
     def __add__(self, other):
         """Add two vectors."""
+        self._check_other(other)
         return Vec2D(self.x + other.x, self.y + other.y)
     
     def __sub__(self, other):
         """Subtract two vectors."""
+        self._check_other(other)
         return Vec2D(self.x - other.x, self.y - other.y)
     
     def __mul__(self, scalar):
@@ -138,6 +141,7 @@ class Vec2D:
     
     def dot(self, other):
         """Compute dot product with another vector."""
+        self._check_other(other)
         return self.x * other.x + self.y * other.y
         
     def rotate(self, angle):
@@ -153,7 +157,7 @@ class Vec2D:
         c, s = rotation_coefficients(angle)
         return Vec2D(*rotation_pair(self.x, self.y, c, s))
 
-class Vec3D:
+class Vec3D(SpatialAPI):
     """3D Vector class supporting both NumPy and Awkward array backends.
     
     Attributes:
@@ -301,10 +305,12 @@ class Vec3D:
     
     def __add__(self, other):
         """Add two vectors."""
+        self._check_other(other)
         return Vec3D(self.x + other.x, self.y + other.y, self.z + other.z)
     
     def __sub__(self, other):
         """Subtract two vectors."""
+        self._check_other(other)
         return Vec3D(self.x - other.x, self.y - other.y, self.z - other.z)
     
     def __mul__(self, scalar):
@@ -319,10 +325,12 @@ class Vec3D:
     
     def dot(self, other):
         """Compute dot product with another vector."""
+        self._check_other(other)
         return self.x * other.x + self.y * other.y + self.z * other.z
     
     def cross(self, other):
         """Compute cross product with another vector."""
+        self._check_other(other)
         return Vec3D(self.y * other.z - self.z * other.y,
                     self.z * other.x - self.x * other.z,
                     self.x * other.y - self.y * other.x)
