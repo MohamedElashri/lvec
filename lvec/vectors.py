@@ -1,10 +1,11 @@
 # vectors.py
 import numpy as np
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
-                        backend_sin, backend_cos, backend_atan2, own_components, normalize_scalar)
+                        backend_atan2, own_components, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_pt, compute_p)
 from .exceptions import ShapeError, InputError, BackendError
 from .caching import PropertyCache
+from ._adaptive import rotation_pair, rotation_coefficients
 
 class Vec2D:
     """2D Vector class supporting both NumPy and Awkward array backends.
@@ -19,7 +20,6 @@ class Vec2D:
         self._lib = 'unknown'
         try:
             self._x, self._y, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y)))
-            check_shapes(self._x, self._y, self._lib)
             self._x, self._y = own_components(self._x, self._y)
         except Exception as e:
             if isinstance(e, ShapeError):
@@ -107,10 +107,7 @@ class Vec2D:
     def r(self):
         """Magnitude of the vector."""
         def calculate_r():
-            # Use cached intermediate calculations
-            x_squared = self._x_squared()
-            y_squared = self._y_squared()
-            return backend_sqrt(x_squared + y_squared, self._lib)
+            return np.hypot(self._x, self._y)
             
         return self._get_cached('r', calculate_r, ['x', 'y'])
     
@@ -153,8 +150,8 @@ class Vec2D:
         Returns:
             Vec2D: New rotated 2D vector
         """
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec2D(c*self.x - s*self.y, s*self.x + c*self.y)
+        c, s = rotation_coefficients(angle)
+        return Vec2D(*rotation_pair(self.x, self.y, c, s))
 
 class Vec3D:
     """3D Vector class supporting both NumPy and Awkward array backends.
@@ -169,7 +166,6 @@ class Vec3D:
         self._lib = 'unknown'
         try:
             self._x, self._y, self._z, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y, z)))
-            check_shapes(self._x, self._y, self._z, self._lib)
             self._x, self._y, self._z = own_components(self._x, self._y, self._z)
         except Exception as e:
             if isinstance(e, ShapeError):
@@ -274,7 +270,7 @@ class Vec3D:
         """Magnitude of the vector."""
         def calculate_r():
             # Use cached intermediate calculations for better efficiency
-            return backend_sqrt(self._xy_squared() + self._z_squared(), self._lib)
+            return np.hypot(np.hypot(self._x, self._y), self._z)
             
         return self._get_cached('r', calculate_r, ['x', 'y', 'z'])
     
@@ -283,7 +279,7 @@ class Vec3D:
         """Cylindrical radius."""
         def calculate_rho():
             # Use the shared intermediate calculation
-            return backend_sqrt(self._xy_squared(), self._lib)
+            return np.hypot(self._x, self._y)
             
         return self._get_cached('rho', calculate_rho, ['x', 'y'])
     
@@ -333,25 +329,22 @@ class Vec3D:
                     
     def rotx(self, angle):
         """Rotate around x-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec3D(self.x,
-                   c*self.y - s*self.z,
-                   s*self.y + c*self.z)
-    
+        c, s = rotation_coefficients(angle)
+        y, z = rotation_pair(self.y, self.z, c, s)
+        return Vec3D(self.x, y, z)
+
     def roty(self, angle):
         """Rotate around y-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec3D(c*self.x + s*self.z,
-                   self.y,
-                   -s*self.x + c*self.z)
-    
+        c, s = rotation_coefficients(angle)
+        x, z = rotation_pair(self.x, self.z, c, -s)
+        return Vec3D(x, self.y, z)
+
     def rotz(self, angle):
         """Rotate around z-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return Vec3D(c*self.x - s*self.y,
-                   s*self.x + c*self.y,
-                   self.z)
-    
+        c, s = rotation_coefficients(angle)
+        x, y = rotation_pair(self.x, self.y, c, s)
+        return Vec3D(x, y, self.z)
+
     def rotate(self, angle, axis='z'):
         """
         Rotate around a specified axis.

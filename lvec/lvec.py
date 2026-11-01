@@ -1,11 +1,13 @@
 # lvec.py
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
-                        backend_sin, backend_cos, backend_atan2,
+                        backend_atan2,
                         backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, freeze_array, normalize_scalar)
-from .utils import ensure_array, check_shapes, compute_p4_from_ptepm
+from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
+                    scaled_invariant, invariant_result, euclidean_result, dot_result)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
 from .frame import Frame
+from ._adaptive import rotation_pair, rotation_coefficients, boost_components, adaptive_sum
 import numpy as np
 
 
@@ -51,7 +53,6 @@ class LVec:
         self._lib = 'unknown'
         try:
             self._px, self._py, self._pz, self._E, self._lib = ensure_array(*(normalize_scalar(x) for x in (px, py, pz, E)))
-            check_shapes(self._px, self._py, self._pz, self._E, self._lib)
             components = (self._px, self._py, self._pz, self._E)
             if trusted and self._lib == 'np':
                 # Callers supply fresh arithmetic results or immutable owned
@@ -128,11 +129,21 @@ class LVec:
             raise ValueError("Particle validation tolerances must be finite and non-negative")
         finite = (np.isfinite(self.px) & np.isfinite(self.py)
                   & np.isfinite(self.pz) & np.isfinite(self.E))
-        with np.errstate(invalid='ignore', over='ignore'):
-            p2 = self._p_squared()
-            e2 = self.E**2
-            tolerance = atol + rtol * np.maximum(e2, p2)
-            return finite & (self.E >= 0) & ((e2 - p2) >= -tolerance)
+        if rtol == 0:
+            norm = self.mass2
+            allowed = norm >= -atol
+            if atol == 0:
+                # A negative squared invariant may round to negative zero.
+                allowed = allowed & ~np.signbit(norm)
+            return finite & (self.E >= 0) & allowed
+        with np.errstate(invalid='ignore', over='ignore', under='ignore', divide='ignore'):
+            scale, norm = scaled_invariant(self.E, self.px, self.py, self.pz, self._lib)
+            denominator = backend_where(scale == 0, 1., scale, self._lib)
+            e2 = (self.E / denominator)**2
+            p2 = ((self.px / denominator)**2 + (self.py / denominator)**2
+                  + (self.pz / denominator)**2)
+            tolerance = (atol / denominator) / denominator + rtol * np.maximum(e2, p2)
+            return finite & (self.E >= 0) & (norm >= -tolerance)
 
     def validate_particle(self, rtol=1e-12, atol=0.0):
         """Raise InputError for invalid particle momenta; return self otherwise.
@@ -278,13 +289,13 @@ class LVec:
     
     # Cached intermediate calculations for reuse
     def _px_squared(self):
-        return self._get_intermediate('px_squared', lambda: self._px**2)
+        return self._get_intermediate('px_squared', lambda: np.square(self._px))
     
     def _py_squared(self):
-        return self._get_intermediate('py_squared', lambda: self._py**2)
+        return self._get_intermediate('py_squared', lambda: np.square(self._py))
     
     def _pz_squared(self):
-        return self._get_intermediate('pz_squared', lambda: self._pz**2)
+        return self._get_intermediate('pz_squared', lambda: np.square(self._pz))
     
     def _pt_squared(self):
         return self._get_intermediate('pt_squared', 
@@ -297,22 +308,32 @@ class LVec:
     @property
     def pt(self):
         """Transverse momentum."""
-        return self._get_cached('pt', 
-                             lambda: backend_sqrt(self._pt_squared(), self._lib),
-                             ['px', 'py'])
+        def calculate():
+            if is_np(self._px):
+                with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                    return euclidean_result(self._pt_squared(), self._px, self._py)
+            return np.hypot(self._px, self._py)
+        return self._get_cached('pt', calculate, ['px', 'py'])
     
     @property
     def p(self):
         """Total momentum magnitude."""
-        return self._get_cached('p', 
-                             lambda: backend_sqrt(self._p_squared(), self._lib),
-                             ['px', 'py', 'pz'])
+        def calculate():
+            if is_np(self._px):
+                with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                    return euclidean_result(self._p_squared(), self._px, self._py, self._pz)
+            return np.hypot(np.hypot(self._px, self._py), self._pz)
+        return self._get_cached('p', calculate, ['px', 'py', 'pz'])
     
     @property
     def mass2(self):
         """Signed invariant mass squared with metric (+, -, -, -)."""
-        return self._get_cached('mass2', lambda: self._E**2 - self._p_squared(),
-                                ['px', 'py', 'pz', 'E'])
+        def calculate():
+            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                m2 = np.square(self._E) - self._p_squared()
+                return invariant_result(m2, self.E, self.px, self.py, self.pz,
+                                        self._lib, squared=True)
+        return self._get_cached('mass2', calculate, ['px', 'py', 'pz', 'E'])
 
     @property
     def mass(self):
@@ -322,16 +343,9 @@ class LVec:
         dimensionful tolerance or absolute value hides the sign of m².
         """
         def calc_mass():
-            m2 = self._E**2 - self._p_squared()
-            if isinstance(m2, np.ndarray):
-                # m2 is a fresh temporary: reuse it for the result instead of
-                # allocating sign, absolute-value and square-root float arrays.
-                negative = np.signbit(m2)
-                np.abs(m2, out=m2)
-                np.sqrt(m2, out=m2)
-                np.negative(m2, out=m2, where=negative)
-                return m2
-            return np.sign(m2) * np.sqrt(abs(m2))
+            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                m2 = np.square(self._E) - self._p_squared()
+                return invariant_result(m2, self.E, self.px, self.py, self.pz, self._lib)
         return self._get_cached('mass', calc_mass, ['px', 'py', 'pz', 'E'])
 
     @property
@@ -353,7 +367,14 @@ class LVec:
             # Select a safe denominator before division, so zero vectors do
             # not produce runtime warnings on either array backend.
             safe_pt = backend_where(pt == 0, 1.0, pt, self._lib)
-            eta = np.arcsinh(self._pz / safe_pt)
+            with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+                ratio = self._pz / safe_pt
+                eta = np.arcsinh(ratio)
+                exceptional = np.isinf(ratio) & np.isfinite(self._pz) & (pt > 0)
+                if backend_any(exceptional):
+                    fallback = np.sign(self._pz) * (np.log(abs(self._pz))
+                                                    - np.log(safe_pt) + np.log(2.))
+                    eta = backend_where(exceptional, fallback, eta, self._lib)
             beam_eta = backend_where(self._pz == 0, 0.0,
                                      backend_where(self._pz > 0, np.inf, -np.inf, self._lib),
                                      self._lib)
@@ -396,17 +417,10 @@ class LVec:
             # component broadcasting rules.
             bx, by, bz, boost_lib = ensure_array(*(normalize_scalar(x) for x in (bx, by, bz)))
             bx, by, bz = own_components(bx, by, bz)
-            b2 = validate_beta(bx, by, bz)
-            gamma = 1.0 / backend_sqrt(1.0 - b2, boost_lib)
-            bp = bx*self.px + by*self.py + bz*self.pz
-            # Equivalent to (gamma-1)/beta², stable at beta=0 and tiny beta.
-            gamma2 = gamma * gamma / (gamma + 1.0)
+            _, delta = validate_beta(bx, by, bz, return_delta=True)
+            gamma = 1.0 / backend_sqrt(delta, boost_lib)
+            px, py, pz, E = boost_components(self.to_p4(), (bx, by, bz), gamma)
 
-            px = self.px + gamma2*bp*bx + gamma*bx*self.E
-            py = self.py + gamma2*bp*by + gamma*by*self.E
-            pz = self.pz + gamma2*bp*bz + gamma*bz*self.E
-            E = gamma*(self.E + bp)
-    
             return LVec._from_owned(px, py, pz, E)
         except Exception as e:
             if isinstance(e, (InputError, DependencyError)):
@@ -419,28 +433,22 @@ class LVec:
     
     def rotx(self, angle):
         """Rotate around x-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec._from_owned(self.px,
-                   c*self.py - s*self.pz,
-                   s*self.py + c*self.pz,
-                   self.E)
-    
+        c, s = rotation_coefficients(angle)
+        py, pz = rotation_pair(self.py, self.pz, c, s)
+        return LVec._from_owned(self.px, py, pz, self.E)
+
     def roty(self, angle):
         """Rotate around y-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec._from_owned(c*self.px + s*self.pz,
-                   self.py,
-                   -s*self.px + c*self.pz,
-                   self.E)
-    
+        c, s = rotation_coefficients(angle)
+        px, pz = rotation_pair(self.px, self.pz, c, -s)
+        return LVec._from_owned(px, self.py, pz, self.E)
+
     def rotz(self, angle):
         """Rotate around z-axis."""
-        c, s = backend_cos(angle, self._lib), backend_sin(angle, self._lib)
-        return LVec._from_owned(c*self.px - s*self.py,
-                   s*self.px + c*self.py,
-                   self.pz,
-                   self.E)
-    
+        c, s = rotation_coefficients(angle)
+        px, py = rotation_pair(self.px, self.py, c, s)
+        return LVec._from_owned(px, py, self.pz, self.E)
+
     def rotate(self, angle, axis='z'):
         """
         Rotate around a specified axis.
@@ -555,21 +563,30 @@ class LVec:
     @property
     def pt2(self):
         """Squared transverse momentum, without a square root."""
-        return self._get_cached('pt2', lambda: self.px**2 + self.py**2,
-                                ['px', 'py'])
+        def calculate():
+            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                return self._pt_squared()
+        return self._get_cached('pt2', calculate, ['px', 'py'])
 
     @property
     def p2(self):
         """Squared spatial momentum."""
-        return self._get_cached('p2', lambda: self.px**2 + self.py**2 + self.pz**2,
-                                ['px', 'py', 'pz'])
+        def calculate():
+            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                return self._p_squared()
+        return self._get_cached('p2', calculate, ['px', 'py', 'pz'])
 
     def dot(self, other):
         """Minkowski scalar product with metric (+, -, -, -), in common units."""
         if not isinstance(other, LVec):
             raise TypeError("other must be an LVec")
-        return (self.E * other.E - self.px * other.px
-                - self.py * other.py - self.pz * other.pz)
+        if other is self:
+            return self.mass2
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            result = (self.E * other.E - self.px * other.px
+                      - self.py * other.py - self.pz * other.pz)
+            lib = 'ak' if self._lib == 'ak' or other._lib == 'ak' else 'np'
+            return dot_result(result, self.to_p4(), other.to_p4(), lib)
 
     @property
     def rapidity(self):
@@ -663,25 +680,9 @@ class LVec:
         Awkward missing particles are skipped; missing events remain missing
         when reducing their particle axis. All components must share masks.
         """
-        if self._lib == 'ak':
-            import awkward as ak
-            # An independently missing component is not a missing particle.
-            # Reject it rather than silently summing incomplete four-vectors.
-            # These kernels inspect each nesting depth, never individual events.
-            values = self.to_p4()
-            if any(c.ndim != values[0].ndim for c in values):
-                raise ShapeError("Reduction components must have matching dimensions")
-            for depth in range(values[0].ndim):
-                masks = [ak.to_numpy(ak.flatten(ak.is_none(c, axis=depth),
-                                               axis=None)) for c in values]
-                if any(not np.array_equal(mask, masks[0]) for mask in masks[1:]):
-                    raise ShapeError("Reduction components must have matching missing-value masks")
-            components = [ak.sum(c, axis=axis, keepdims=keepdims,
-                                 mask_identity=False) for c in values]
-        else:
-            components = [np.sum(c, axis=axis, keepdims=keepdims)
-                          for c in self.to_p4()]
-        return type(self)(*components)
+        components = [adaptive_sum(c, axis=axis, keepdims=keepdims)
+                      for c in self.to_p4()]
+        return type(self)._from_owned(*components)
 
     @classmethod
     def from_ak_record(cls, records):
@@ -757,7 +758,25 @@ class LVec:
         Zero-momentum vectors have undefined direction and yield NaN. Missing
         Awkward values stay missing. This spatial angle is frame dependent.
         """
-        return np.arccos(self._spatial_cosine(other))
+        return self._spatial_angle(other)
+
+    def _spatial_angle(self, other, *, opposite=False):
+        """atan2 keeps collinear angles that would disappear in acos(dot)."""
+        if not isinstance(other, LVec):
+            raise TypeError("other must be an LVec")
+        directions = []
+        with np.errstate(divide='ignore', invalid='ignore', under='ignore'):
+            for vector in (self, other):
+                scale = np.maximum(np.maximum(abs(vector.px), abs(vector.py)), abs(vector.pz))
+                xyz = tuple(np.divide(c, scale) for c in vector.to_p4()[:3])
+                norm = np.hypot(np.hypot(xyz[0], xyz[1]), xyz[2])
+                directions.append(tuple(c / norm for c in xyz))
+            a, b = directions
+            cross = (a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2],
+                     a[0]*b[1] - a[1]*b[0])
+            sine = np.hypot(np.hypot(cross[0], cross[1]), cross[2])
+            cosine = sum(x*y for x, y in zip(a, b))
+            return np.arctan2(sine, -cosine if opposite else cosine)
 
     def helicity_angle(self, parent, reference):
         """Daughter helicity angle in radians [0, pi].
@@ -773,4 +792,4 @@ class LVec:
             raise TypeError("parent and reference must be LVec objects")
         daughter_rest = self.boost_to_rest(parent)
         reference_rest = reference.boost_to_rest(parent)
-        return np.arccos(-daughter_rest._spatial_cosine(reference_rest))
+        return daughter_rest._spatial_angle(reference_rest, opposite=True)

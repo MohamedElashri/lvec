@@ -1,6 +1,6 @@
 import numpy as np
 from .backends import (to_np, to_ak, is_ak, is_np, 
-                      backend_sqrt, backend_where, backend_any, validate_beta, own_components, normalize_scalar)
+                      backend_sqrt, backend_where, beta_delta, backend_any, validate_beta, own_components, normalize_scalar)
 from .utils import ensure_array, check_shapes
 from .exceptions import InputError, BackendError, DependencyError
 
@@ -44,10 +44,7 @@ class Frame:
                 self._lib = 'np'  # Default to NumPy for scalars
             else:
                 # For array inputs, use ensure_array
-                dummy = bz  # Dummy value for the 4th parameter required by ensure_array
-                self._beta_x, self._beta_y, self._beta_z, _, self._lib = ensure_array(bx, by, bz, dummy)
-                # Validate shape consistency
-                check_shapes(self._beta_x, self._beta_y, self._beta_z, self._lib)
+                self._beta_x, self._beta_y, self._beta_z, self._lib = ensure_array(bx, by, bz)
             
             self._beta_x, self._beta_y, self._beta_z = own_components(
                 self._beta_x, self._beta_y, self._beta_z)
@@ -163,8 +160,8 @@ class Frame:
     @property
     def gamma(self):
         """Lorentz factor γ = 1/√(1-β²) for this frame."""
-        b2 = self._beta_x**2 + self._beta_y**2 + self._beta_z**2
-        return 1.0 / backend_sqrt(1.0 - b2, self._lib)
+        _, delta = beta_delta(self._beta_x, self._beta_y, self._beta_z)
+        return 1.0 / backend_sqrt(delta, self._lib)
         
     def __repr__(self):
         """String representation of the Frame."""
