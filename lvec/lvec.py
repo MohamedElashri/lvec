@@ -3,7 +3,7 @@ from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_atan2,
                         backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, freeze_array, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
-                    scaled_invariant, invariant_result, euclidean_result, dot_result)
+                    scaled_invariant, invariant_result, awkward_invariant, euclidean_result, dot_result)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
 from .frame import Frame
@@ -329,6 +329,8 @@ class LVec:
     def mass2(self):
         """Signed invariant mass squared with metric (+, -, -, -)."""
         def calculate():
+            if self._lib == 'ak' and not self._cache._cache_intermediates:
+                return awkward_invariant(*self.to_p4(), squared=True)
             with np.errstate(over='ignore', under='ignore', invalid='ignore'):
                 m2 = np.square(self._E) - self._p_squared()
                 return invariant_result(m2, self.E, self.px, self.py, self.pz,
@@ -343,6 +345,8 @@ class LVec:
         dimensionful tolerance or absolute value hides the sign of m².
         """
         def calc_mass():
+            if self._lib == 'ak' and not self._cache._cache_intermediates:
+                return awkward_invariant(*self.to_p4())
             with np.errstate(over='ignore', under='ignore', invalid='ignore'):
                 m2 = np.square(self._E) - self._p_squared()
                 return invariant_result(m2, self.E, self.px, self.py, self.pz, self._lib)

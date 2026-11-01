@@ -298,6 +298,33 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
         return backend_where(exceptional & finite, fallback, result, lib)
 
 
+def awkward_invariant(px, py, pz, energy, *, squared=False):
+    """Traverse once, applying the existing invariant/recovery kernel at leaves.
+
+    Components have already been normalized and checked by LVec. Awkward aligns
+    indexed/optional contents and preserves their visible list/missing structure.
+    The NumPy expression retains the original order of the squared sums.
+    """
+    import awkward as ak
+
+    if ak.backend(energy) != 'cpu':
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            m2 = np.square(energy) - (np.square(px) + np.square(py) + np.square(pz))
+            return invariant_result(m2, energy, px, py, pz, 'ak', squared=squared)
+
+    def transform(layouts, **kwargs):
+        if all(layout.is_numpy for layout in layouts):
+            x, y, z, e = (layout.data for layout in layouts)
+            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                m2 = np.square(e) - (np.square(x) + np.square(y) + np.square(z))
+                result = invariant_result(m2, e, x, y, z, 'np', squared=squared)
+            return ak.contents.NumpyArray(result)
+        if all(layout.is_unknown for layout in layouts):
+            return layouts[0]
+
+    return ak.transform(transform, px, py, pz, energy, allow_records=False)
+
+
 def compute_pt(px, py, lib):
     """
     Compute transverse momentum.
