@@ -82,6 +82,46 @@ def ensure_array(*args):
         raise BackendError("initialization", "unknown", str(e)) from e
     
 
+def _plain_structure_equal(layouts):
+    """Compare visible plain layout shapes; None requests general validation.
+
+    Only lists, regular dimensions, and NumPy leaves are handled. Trim unused
+    content at each level so sliced offsets may differ without changing shape.
+    Never inspect particle values or compare hidden content beyond list bounds.
+    """
+    import awkward as ak
+
+    while True:
+        # Semantic arrays (for example strings) can hide a physical list axis.
+        if any(layout.parameter('__array__') is not None for layout in layouts):
+            return None
+        if all(layout.is_numpy for layout in layouts):
+            shape = layouts[0].data.shape
+            return all(layout.data.shape == shape for layout in layouts[1:])
+        if all(isinstance(layout, ak.contents.ListOffsetArray) for layout in layouts):
+            offsets = layouts[0].offsets.data
+            lengths = None
+            children = []
+            for layout in layouts:
+                other = layout.offsets.data
+                if other is not offsets and not np.array_equal(offsets, other):
+                    if lengths is None:
+                        lengths = np.diff(offsets)
+                    if not np.array_equal(lengths, np.diff(other)):
+                        return False
+                start, stop = int(other[0]), int(other[-1])
+                child = layout.content
+                children.append(child if start == 0 and stop == len(child) else child[start:stop])
+            layouts = children
+        elif all(isinstance(layout, ak.contents.RegularArray) for layout in layouts):
+            size, length = layouts[0].size, len(layouts[0])
+            if any(layout.size != size or len(layout) != length for layout in layouts[1:]):
+                return False
+            layouts = [layout.content[:length * size] for layout in layouts]
+        else:
+            return None
+
+
 def check_shapes(*arrays):
     """Require equal shapes and missing-value positions at every nesting depth.
 
@@ -112,6 +152,12 @@ def check_shapes(*arrays):
         raise ShapeError("Inconsistent array lengths in Awkward arrays", shapes=shape_info)
     if any(arr.ndim != reference.ndim for arr in arrays[1:]):
         raise ShapeError("Inconsistent nesting depths in Awkward arrays", shapes=shape_info)
+
+    plain = _plain_structure_equal([ak.to_layout(arr) for arr in arrays])
+    if plain is False:
+        raise ShapeError("Inconsistent inner dimensions in Awkward arrays", shapes=shape_info)
+    if plain is True:
+        return
 
     def equal_structure(left, right):
         return ak.almost_equal(left, right, rtol=0, atol=0,
@@ -275,6 +321,33 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
             result[exceptional] = np.where(finite, fallback, result[exceptional])
             return result
         return backend_where(exceptional & finite, fallback, result, lib)
+
+
+def awkward_invariant(px, py, pz, energy, *, squared=False):
+    """Traverse once, applying the existing invariant/recovery kernel at leaves.
+
+    Components have already been normalized and checked by LVec. Awkward aligns
+    indexed/optional contents and preserves their visible list/missing structure.
+    The NumPy expression retains the original order of the squared sums.
+    """
+    import awkward as ak
+
+    if ak.backend(energy) != 'cpu':
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            m2 = np.square(energy) - (np.square(px) + np.square(py) + np.square(pz))
+            return invariant_result(m2, energy, px, py, pz, 'ak', squared=squared)
+
+    def transform(layouts, **kwargs):
+        if all(layout.is_numpy for layout in layouts):
+            x, y, z, e = (layout.data for layout in layouts)
+            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                m2 = np.square(e) - (np.square(x) + np.square(y) + np.square(z))
+                result = invariant_result(m2, e, x, y, z, 'np', squared=squared)
+            return ak.contents.NumpyArray(result)
+        if all(layout.is_unknown for layout in layouts):
+            return layouts[0]
+
+    return ak.transform(transform, px, py, pz, energy, allow_records=False)
 
 
 def compute_pt(px, py, lib):

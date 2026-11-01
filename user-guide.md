@@ -37,7 +37,7 @@ Supported Python versions and dependency constraints are declared in
 | `pip install "lvec[awkward]"` | Jagged collections and Awkward records |
 | `pip install "lvec[test]"` | pytest |
 | `pip install "lvec[examples]"` | Awkward, uproot, and matplotlib examples |
-| `pip install "lvec[benchmark]"` | Comparison, plotting, and memory benchmark tools |
+| `pip install "lvec[benchmark]"` | Optional Awkward workloads and `vector` benchmark comparisons |
 | `pip install -e ".[dev]"` | All development extras from a checkout |
 
 Install a checkout to work with a release candidate before its publication.
@@ -362,16 +362,29 @@ reversible transforms for every input. Precision already lost in supplied
 components cannot be recovered. An unrepresentable squared observable may be
 infinite or zero even when its square root is representable.
 
-Detection has overhead even when a precision fallback does not run. In the
-recorded million-entry workload, NumPy boost/rotation/sum times were about
-17.0/6.6/12.7 ms, compared with 10.9/2.6/6.4 ms without the adaptive checks.
-Jagged boosts and rotations were within about 7% of that baseline; jagged sums
-took about twice as long. These are single-machine measurements, not timing
-guarantees. The [adaptive precision report](benchmarks/results/adaptive-precision-2026-11-01.json)
-records the environment, workload, and mixed-batch recovery counts.
+Detection has overhead even when a precision fallback does not run. The
+[benchmark README](benchmarks/README.md) records current measurements and
+commands for ordinary workloads, cancellation, and mixed batches with
+exceptional boosts. These are single-machine measurements, not timing guarantees.
 
 Compensated products/sums follow
 [Ogita, Rump and Oishi (2005)](https://doi.org/10.1137/030601818).
+
+### Awkward execution and validation
+
+Plain Awkward layouts use exact structural comparisons; default mass calculations
+run within numerical leaves. Scalar boosts use broadcast views, and internal
+results reuse immutable owned buffers when shape and ownership are established.
+Public construction and paths involving external selectors or array-valued
+rotation/scaling preserve snapshot protection. Intermediate caching retains its
+established calculation path.
+
+The [benchmark methods and results](benchmarks/README.md) provide the current
+measurement record, hardware and dependency versions, timing and allocation
+boundaries, workload definitions, reproduction commands, and limitations.
+Correctness checks include independent Fraction/Decimal references, signed zeros,
+underflow/overflow, near-light-speed boosts, indexed and missing layouts, cache
+policies, complex-input rejection, and mutable external parameters.
 
 ## Examples
 
@@ -436,24 +449,19 @@ physics stress cases cover random transformations, two-body decays, massless
 vectors, nested missing data, numerical extremes, and cache lifecycle.
 
 ```bash
-PYTHONPATH=. python benchmarks/benchmark_core.py --sizes 1000 1000000 --jagged-events 10000
-PYTHONPATH=. python benchmarks/stress_lvec.py --sizes 1000 10000 100000 1000000 --repeats 5
-PYTHONPATH=. python benchmarks/stress_lvec.py --kinds extreme --sizes 1 1000 10000
-PYTHONPATH=. python benchmarks/adaptive_precision.py --before /path/to/baseline --after .
-PYTHONPATH=. python benchmarks/adaptive_precision.py --probe --repeats 3
+pip install -e ".[benchmark]"
+python -m benchmarks
+python -m benchmarks --layouts jagged --sizes 1000 100000
+python -m benchmarks --layouts missing deep heavy-tail --sizes 1000 10000
+python -m benchmarks --layouts extreme --sizes 1000
+python -m benchmarks --layouts numpy jagged --compare-vector --sizes 1000 100000
 ```
 
-Benchmarks use seeded data and distinguish cold calculations, cached reads,
-complete workflows, retained buffers, traced allocations, and process memory
-where applicable. Compare the same script and environment across checkouts;
-cached reads do not measure arithmetic throughput. Timings are not CI gates.
-Missing/deep/heavy-tail stress cases are capped at 100,000 events, and explicit
-extreme-cancellation batches at 10,000 entries.
-
-Recorded data are available in the
-[scaling report](benchmarks/results/stress-2026-11-01.json),
-[invariant accuracy report](benchmarks/results/invariant-accuracy-2026-11-01.json),
-and [adaptive report](benchmarks/results/adaptive-precision-2026-11-01.json).
+The [benchmark README](benchmarks/README.md) describes the workloads, measurement
+boundaries, reproducibility controls, and measured results. Workers validate
+outputs before and after measurement; timings and traced allocations run in
+separate processes. Cached reads do not measure arithmetic throughput. Timings
+are not CI gates. Reports are Markdown; generated artifacts stay out of Git.
 
 ## Workflow dependencies
 
@@ -502,12 +510,15 @@ and [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/using-a-p
 
 ## Citation
 
-Record `lvec.__version__` with analysis outputs when an exact software version
-is needed.
+Use the machine-readable [CITATION.cff](CITATION.cff) for software attribution.
+Record the release version or exact Git commit, Python and dependency versions,
+and relevant numerical/cache settings with an analysis. Development checkouts
+can share version metadata with a release, so `lvec.__version__` alone may not
+identify the code used.
 
 ```bibtex
 @software{lvec,
-  author = {Mohamed Elashri},
+  author = {Elashri, Mohamed},
   title = {LVec: Lorentz and spatial vectors for physics analysis},
   url = {https://github.com/MohamedElashri/lvec}
 }
