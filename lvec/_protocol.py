@@ -302,6 +302,10 @@ class PlanarAPI:
     def rotateZ(self,angle):
         return self.rotate(angle)
 
+    def transform2D(self,obj):
+        from ._transform import transform
+        return self._new(*transform(self._components(),obj,2))
+
 
 class SpatialAPI(PlanarAPI):
     _dimension = 3
@@ -389,6 +393,56 @@ class SpatialAPI(PlanarAPI):
 
     def rotateZ(self,angle):
         return self.rotz(angle)
+
+    def transform3D(self,obj):
+        from ._transform import transform
+        return self._new(*transform(self._components(),obj,3))
+
+    def rotate_axis(self,axis,angle):
+        """Active right-handed rotation around a nonzero 3D direction."""
+        from ._transform import real_parameter, mapping
+        if not isinstance(axis,SpatialAPI):
+            raise TypeError("axis must be a 3D or 4D vector")
+        if backend_any((axis.x==0)&(axis.y==0)&(axis.z==0)):
+            raise ValueError("Rotation axis must be nonzero")
+        a=directions(axis._components()[:3]);angle=real_parameter(angle)
+        c,s=np.cos(angle),np.sin(angle)
+        skew=[[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]]
+        matrix=[[(c if i==j else 0.)+(1-c)*a[i]*a[j]+s*skew[i][j]
+                 for j in range(3)] for i in range(3)]
+        return self.transform3D(mapping(matrix))
+
+    def rotate_euler(self,phi,theta,psi,order='zxz'):
+        """ROOT/vector Euler convention: R_a(-psi) R_b(-theta) R_c(-phi).
+
+        ``order=abc`` accepts the six proper Euler and six Tait-Bryan orders.
+        The sign differs from a sequence of positive active axis rotations.
+        """
+        from ._transform import rotation_matrix, multiply, mapping, real_parameter
+        if order not in ('zxz','xyx','yzy','zyz','xzx','yxy','xzy','xyz','yxz','yzx','zyx','zxy'):
+            raise ValueError("Unsupported Euler rotation order")
+        angles=tuple(real_parameter(a) for a in (phi,theta,psi))
+        matrix=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
+        for axis,angle in zip(order[::-1],angles):
+            matrix=multiply(rotation_matrix(axis,-angle),matrix)
+        return self.transform3D(mapping(matrix))
+
+    def rotate_nautical(self,yaw,pitch,roll):
+        return self.rotate_euler(roll,pitch,yaw,order='zyx')
+
+    def rotate_quaternion(self,u,i,j,k):
+        """Rotate with scalar-first quaternion (u,i,j,k), without normalization.
+
+        Unit quaternions preserve length. As in vector, a non-unit quaternion
+        additionally scales the result by its squared norm.
+        """
+        from ._transform import real_parameter, mapping
+        u,i,j,k=map(real_parameter,(u,i,j,k))
+        v=(i,j,k);base=u*u-i*i-j*j-k*k
+        skew=[[0.,-k,j],[k,0.,-i],[-j,i,0.]]
+        matrix=[[(base if a==b else 0.)+2*v[a]*v[b]+2*u*skew[a][b]
+                 for b in range(3)] for a in range(3)]
+        return self.transform3D(mapping(matrix))
 
 
 class LorentzAPI(SpatialAPI):
@@ -528,6 +582,10 @@ class LorentzAPI(SpatialAPI):
 
     def boostZ(self,beta=None,gamma=None):
         return self._boost_axis(2,beta,gamma)
+
+    def transform4D(self,obj):
+        from ._transform import transform
+        return self._new(*transform(self._components(),obj,4))
 
 
 from ._coordinates import install_conversions

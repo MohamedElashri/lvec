@@ -209,3 +209,58 @@ def test_boosts_extreme_decimal_and_awkward():
     result=jagged.boostX(gamma=ak.Array([[2.,None],[],None,[-2.]]))
     assert ak.to_list(ak.is_none(result.px,axis=0))==[False,False,True,False]
     assert result.boostX(gamma=ak.Array([[-2.,None],[],None,[2.]])).allclose(jagged)
+
+
+@pytest.mark.parametrize('order',['zxz','xyx','yzy','zyz','xzx','yxy','xzy','xyz','yxz','yzx','zyx','zxy'])
+def test_euler_independent_matrix_composition(order):
+    v=LVec(1.,2.,3.,8.)
+    angles=(.2,.3,.4)
+    def matrix(axis,angle):
+        # Build each active rotation from its action on Cartesian basis vectors.
+        c,s=np.cos(angle),np.sin(angle)
+        m=np.eye(3);a,b={'x':(1,2),'y':(2,0),'z':(0,1)}[axis]
+        m[a,a]=m[b,b]=c;m[a,b]=-s;m[b,a]=s
+        return m
+    expected=np.eye(3)
+    for axis,angle in zip(order[::-1],angles):expected=matrix(axis,-angle)@expected
+    result=v.rotate_euler(*angles,order=order)
+    np.testing.assert_allclose(result._components()[:3],expected@np.array([1.,2.,3.]),rtol=1e-14,atol=1e-14)
+    assert result.E==8.
+    assert result.mass2==pytest.approx(v.mass2)
+
+
+def test_axis_quaternion_and_general_transforms():
+    v=LVec(1.,2.,3.,8.);angle=.4
+    for xyz,name in [((1.,0.,0.),'rotx'),((0.,1.,0.),'roty'),((0.,0.,1.),'rotz')]:
+        axis=Vector3D(*(a*1e308 for a in xyz))
+        assert v.rotate_axis(axis,angle).allclose(getattr(v,name)(angle),rtol=1e-14)
+        q=[np.cos(angle/2),*(a*np.sin(angle/2) for a in xyz)]
+        assert v.rotate_quaternion(*q).allclose(getattr(v,name)(angle),rtol=1e-14)
+    assert v.rotate_quaternion(2.,0.,0.,0.).allclose(v.scale3D(4.))
+    assert v.rotate_nautical(.1,.2,.3).allclose(v.rotate_euler(.3,.2,.1,order='zyx'))
+    assert v.transform2D({'xx':2.,'xy':0.,'yx':0.,'yy':3.}).allclose(LVec(2.,6.,3.,8.))
+    assert v.transform3D(np.diag([2.,3.,4.])).allclose(LVec(2.,6.,12.,8.))
+    assert v.transform4D(np.diag([2.,3.,4.,5.])).allclose(LVec(2.,6.,12.,40.))
+    beta=.3;gamma=1/np.sqrt(1-beta*beta)
+    m=np.eye(4);m[0,0]=m[3,3]=gamma;m[0,3]=m[3,0]=gamma*beta
+    metric=np.diag([-1.,-1.,-1.,1.])
+    np.testing.assert_allclose(m.T@metric@m,metric,atol=1e-15)
+    assert v.transform4D(m).allclose(v.boostX(beta=beta),rtol=1e-14)
+    # Intermediate products overflow, while the exact result is zero.
+    extreme=Vector2D(2.,2.).transform2D([[1e308,-1e308],[0.,1.]])
+    assert extreme.x==0. and extreme.y==2.
+    with pytest.raises(ValueError):v.rotate_axis(Vector3D(0.,0.,0.),angle)
+    with pytest.raises(ValueError):v.rotate_euler(.1,.2,.3,order='xxx')
+    with pytest.raises(TypeError):v.rotate_quaternion(1j,0.,0.,0.)
+
+
+def test_per_element_transform_parameters_and_ownership():
+    ak=pytest.importorskip('awkward')
+    v=LVec(ak.Array([[1.,None],[],None,[2.]]),0.,0.,3.)
+    result=v.rotate_euler(.1,ak.Array([[.2,None],[],None,[.3]]),.4)
+    assert ak.to_list(ak.is_none(result.E,axis=0))==[False,False,True,False]
+    assert ak.to_list(ak.num(result.px,axis=-1))==[2,0,None,1]
+    matrix=np.broadcast_to(np.eye(3),(2,3,3)).copy()
+    r=Vector3D([1.,2.],0.,0.).transform3D(matrix)
+    matrix[:]=0.
+    np.testing.assert_array_equal(r.x,[1.,2.])
