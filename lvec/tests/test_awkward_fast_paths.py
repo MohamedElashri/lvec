@@ -72,6 +72,55 @@ def test_general_layouts_retain_structural_validation(ak):
             check_shapes(ak.Array(left), ak.Array(right), 'ak')
 
 
+def test_exact_nested_structure_handles_shifted_unused_content(ak, monkeypatch):
+    left = ak.Array([[[1., 2.], []], [], [[3.], [4., 5.]]])
+    right = ak.Array([[[100.]], [[6., 7.], []], [], [[8.], [9., 10.]], [[]]])[1:-1]
+    wrong = ak.Array([[[6., 7.], []], [], [[8., 9.], [10.]]])
+    monkeypatch.setattr(ak, 'almost_equal', lambda *a, **k: pytest.fail('generic structural comparison'))
+    check_shapes(left, right, 'ak')
+    check_shapes(left[1:], right[1:], 'ak')
+    with pytest.raises(ShapeError):
+        check_shapes(left, wrong, 'ak')
+
+
+@pytest.mark.parametrize('regular_layout', [False, True])
+def test_exact_regular_structure_preserves_dimensions(ak, monkeypatch, regular_layout):
+    left = ak.Array(np.ones((3, 2, 4)))
+    if regular_layout:
+        left = ak.to_regular(ak.to_regular(ak.Array(ak.to_list(left)), axis=2), axis=1)
+    right = left * 2.
+    monkeypatch.setattr(ak, 'almost_equal', lambda *a, **k: pytest.fail('generic structural comparison'))
+    check_shapes(left, right, 'ak')
+    with pytest.raises(ShapeError):
+        check_shapes(left, right[:, :, :3], 'ak')
+
+
+def test_random_nested_plain_shapes_match_python_oracle(ak):
+    rng = np.random.default_rng(20261104)
+
+    def make(depth):
+        if depth == 0:
+            return float(rng.normal())
+        return [make(depth - 1) for _ in range(int(rng.integers(0, 5)))]
+
+    def structure(value):
+        return tuple(structure(item) for item in value) if isinstance(value, list) else 'number'
+
+    samples = [make(3) for _ in range(40)]
+    for left, right in zip(samples, samples[1:] + samples[:1]):
+        check_shapes(ak.Array(left), ak.Array(left), 'ak')
+        if structure(left) != structure(right):
+            with pytest.raises(ShapeError):
+                check_shapes(ak.Array(left), ak.Array(right), 'ak')
+        else:
+            check_shapes(ak.Array(left), ak.Array(right), 'ak')
+
+
+def test_semantic_layouts_keep_logical_shape_comparison(ak):
+    # Character storage lengths are not dimensions of the logical string array.
+    check_shapes(ak.Array(['a', 'long']), ak.Array(['longer', 'b']), 'ak')
+
+
 def shaped(ak, values, kind):
     values = np.asarray(values)
     if kind == 'regular':

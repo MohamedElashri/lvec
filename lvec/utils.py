@@ -82,6 +82,46 @@ def ensure_array(*args):
         raise BackendError("initialization", "unknown", str(e)) from e
     
 
+def _plain_structure_equal(layouts):
+    """Compare visible plain layout shapes; None requests general validation.
+
+    Only lists, regular dimensions, and NumPy leaves are handled. Trim unused
+    content at each level so sliced offsets may differ without changing shape.
+    Never inspect particle values or compare hidden content beyond list bounds.
+    """
+    import awkward as ak
+
+    while True:
+        # Semantic arrays (for example strings) can hide a physical list axis.
+        if any(layout.parameter('__array__') is not None for layout in layouts):
+            return None
+        if all(layout.is_numpy for layout in layouts):
+            shape = layouts[0].data.shape
+            return all(layout.data.shape == shape for layout in layouts[1:])
+        if all(isinstance(layout, ak.contents.ListOffsetArray) for layout in layouts):
+            offsets = layouts[0].offsets.data
+            lengths = None
+            children = []
+            for layout in layouts:
+                other = layout.offsets.data
+                if other is not offsets and not np.array_equal(offsets, other):
+                    if lengths is None:
+                        lengths = np.diff(offsets)
+                    if not np.array_equal(lengths, np.diff(other)):
+                        return False
+                start, stop = int(other[0]), int(other[-1])
+                child = layout.content
+                children.append(child if start == 0 and stop == len(child) else child[start:stop])
+            layouts = children
+        elif all(isinstance(layout, ak.contents.RegularArray) for layout in layouts):
+            size, length = layouts[0].size, len(layouts[0])
+            if any(layout.size != size or len(layout) != length for layout in layouts[1:]):
+                return False
+            layouts = [layout.content[:length * size] for layout in layouts]
+        else:
+            return None
+
+
 def check_shapes(*arrays):
     """Require equal shapes and missing-value positions at every nesting depth.
 
@@ -113,25 +153,10 @@ def check_shapes(*arrays):
     if any(arr.ndim != reference.ndim for arr in arrays[1:]):
         raise ShapeError("Inconsistent nesting depths in Awkward arrays", shapes=shape_info)
 
-    # Ordinary jagged numeric arrays have no option masks or deeper list axes.
-    # Their structure is exactly described by the offsets, independently of
-    # numeric values. Slices may start at different content positions, so equal
-    # per-event lengths also accept shifted offsets and unused content buffers.
-    layouts = [ak.to_layout(arr) for arr in arrays]
-    if all(isinstance(layout, ak.contents.ListOffsetArray)
-           and layout.content.is_numpy and layout.content.data.ndim == 1
-           for layout in layouts):
-        offsets = layouts[0].offsets.data
-        lengths = None
-        for layout in layouts[1:]:
-            other = layout.offsets.data
-            if other is offsets or np.array_equal(offsets, other):
-                continue
-            if lengths is None:
-                lengths = np.diff(offsets)
-            if not np.array_equal(lengths, np.diff(other)):
-                raise ShapeError("Inconsistent inner dimensions in Awkward arrays at axis 1",
-                                 shapes=shape_info)
+    plain = _plain_structure_equal([ak.to_layout(arr) for arr in arrays])
+    if plain is False:
+        raise ShapeError("Inconsistent inner dimensions in Awkward arrays", shapes=shape_info)
+    if plain is True:
         return
 
     def equal_structure(left, right):
