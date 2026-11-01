@@ -8,6 +8,7 @@ ordinary workloads. The default suite needs NumPy only and runs offline.
 [Reproduction](#reproduction) · [Experimental setup](#experimental-setup)
 · [Workloads](#workloads) · [Results](#results)
 · [Secondary vector comparison](#secondary-vector-comparison)
+· [Core parity update](#core-parity-update)
 · [Interpretation and validation](#interpretation-and-validation)
 
 ## Reproduction
@@ -18,7 +19,8 @@ use Python 3.13.12 with these dependency versions:
 
 ```bash
 python -m pip install -e ".[test]" numpy==2.5.4 awkward==2.14.0 vector==1.9.0
-python -m benchmarks --check --layouts numpy strided jagged missing deep heavy-tail extreme --sizes 1 17 --compare-vector
+python -m benchmarks --check --layouts numpy strided jagged missing deep heavy-tail extreme --sizes 1 17
+python -m benchmarks --check --layouts numpy jagged --sizes 1 17 --compare-vector
 ```
 
 The recorded runs used the default timing settings and the following selections.
@@ -114,6 +116,17 @@ Default LVec cache policies are used unless stated otherwise.
 | `rotate` | Rotate about z by 0.47 radians, returning a new collection |
 | `sum` | Reduce four-momenta over the groups described below |
 | `workflow` | Add a collection to itself, boost, and calculate the result's mass |
+| `unit_cold` | Clear the input cache; normalize the four-vector with the fused invariant kernel |
+| `rotate_axis` | Rotate by 2pi/3 about (1,1,1), independently checked against the cyclic Cartesian permutation |
+| `rotate_euler` | ROOT/vector zxz Euler rotation by (0.2,0.3,0.4), checked with independently composed matrices |
+| `boost_gamma` | X-axis boost with gamma=1/sqrt(1-0.2²), checked against an independent beta formula |
+| `matrix4d` | General transformation API with diagonal matrix diag(2,3,4,5); this is not a norm-preserving matrix |
+| `record_mass` | Uncached mass calculation through native Awkward record behavior; Awkward layouts only |
+
+The final six cases were added with core numerical parity. Their `vector.*`
+counterparts, where applicable, are opt-in through `--compare-vector` on NumPy
+and jagged layouts. Native `record_mass` compares naturally with `vector.mass`;
+owned `mass_hot` has a populated cache and represents a different boundary.
 
 | Layout | Size means | Input definition |
 | --- | --- | --- |

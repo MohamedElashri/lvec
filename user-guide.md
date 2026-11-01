@@ -46,6 +46,12 @@ checks; it is not the full development environment.
 
 ## Constructing vectors
 
+For vector-style coordinate-keyword factories, all coordinate families,
+projections, general rotations, and native array operations, see
+[Migrating from vector](docs/vector-migration.md) and the
+[core API coverage matrix](docs/vector-feature-parity.md). The direct
+constructors below retain their existing interfaces and scientific policies.
+
 ```python
 import numpy as np
 from lvec import LVec, Frame, Vector2D, Vector3D
@@ -281,6 +287,12 @@ ROOT/PyROOT dependency. `to_root_dict()` provides component arrays suitable for
 writing through uproot.
 
 ## Spatial vectors
+
+Both classes also provide coordinate factories and momentum aliases, division,
+normalization, comparisons, reductions, and vector-aware NumPy operations.
+`Vector3D` adds pseudorapidity, angular distances, direction predicates,
+arbitrary-axis/Euler/quaternion rotations, and general matrix transforms.
+The [coverage matrix](docs/vector-feature-parity.md) lists the complete surface.
 
 `Vector2D(x, y, *, cache_intermediates=False, cache_stats=True)` provides `x`, `y`,
 `r`, `phi`, arithmetic, indexing, `dot(other)`, and `rotate(angle)`.
