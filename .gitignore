@@ -156,3 +156,13 @@ uv.lock
 
 ## pdf plots
 **/*.pdf
+
+# Benchmarks keep source and a curated README, never generated run artifacts.
+/benchmarks/results/
+/benchmarks/plots/
+/benchmarks/*.json
+/benchmarks/**/*.json
+/benchmarks/*.jsonl
+/benchmarks/**/*.jsonl
+/benchmarks/*.csv
+/benchmarks/**/*.csv
