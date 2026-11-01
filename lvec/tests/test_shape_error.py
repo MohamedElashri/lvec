@@ -2,7 +2,7 @@ import pytest
 
 from lvec import LVec, Vector2D, ShapeError
 import numpy as np
-import awkward as ak
+ak = pytest.importorskip("awkward")
 
 def test_shape_error():
     with pytest.raises(ShapeError):

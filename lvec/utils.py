@@ -152,70 +152,9 @@ def compute_p(px, py, pz, lib):
 
 
 def compute_mass(E, p, lib):
-    """
-    Compute mass from energy and momentum.
-    
-    For physical particles, m² = E² - p² should be positive. When negative values
-    are encountered due to numerical inaccuracies, a warning is issued and the
-    absolute value is used.
-    
-    Parameters
-    ----------
-    E : scalar or array-like
-        Energy
-    p : scalar or array-like
-        Momentum
-    lib : str
-        Backend library ('np' or 'ak')
-        
-    Returns
-    -------
-    scalar or array-like
-        Mass with the same type as input
-    """
-    import warnings
+    """Return signed sqrt(E²-p²), including spacelike four-vectors."""
     m2 = E*E - p*p
-    
-    # Check for negative m² values
-    if isinstance(m2, (float, int)):
-        if m2 < 0:
-            warnings.warn(f"Negative m² value encountered: {m2}. Taking absolute value, but this may indicate unphysical particles or numerical issues.")
-            m2 = abs(m2)
-    else:
-        # For array inputs, check if any values are negative
-        has_negative = False
-        
-        if lib == 'ak' and HAS_AWKWARD:
-            # For Awkward arrays
-            try:
-                import awkward as ak
-                # Use ak.any for Awkward arrays
-                has_negative = ak.any(m2 < 0)
-            except Exception:
-                # Fallback if ak.any doesn't work
-                has_negative = any(m2 < 0)
-        else:
-            # For NumPy arrays
-            if hasattr(m2, 'any'):
-                has_negative = (m2 < 0).any()
-            else:
-                # For other iterable types
-                try:
-                    has_negative = any(m2 < 0)
-                except TypeError:
-                    # Not iterable
-                    has_negative = False
-            
-        if has_negative:
-            warnings.warn("Negative m² values encountered. Taking absolute values, but this may indicate unphysical particles or numerical issues.")
-            m2 = backend_where(m2 < 0, abs(m2), m2, lib)
-    
-    m = backend_sqrt(m2, lib)
-    
-    # Convert to scalar only if all inputs were scalars
-    if isinstance(E, (float, int)) and isinstance(p, (float, int)):
-        return float(m)
-    return m
+    return np.sign(m2) * np.sqrt(abs(m2))
 
 
 def compute_eta(p, pz, lib):
