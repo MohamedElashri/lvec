@@ -128,6 +128,13 @@ class LVec:
             raise ValueError("Particle validation tolerances must be finite and non-negative")
         finite = (np.isfinite(self.px) & np.isfinite(self.py)
                   & np.isfinite(self.pz) & np.isfinite(self.E))
+        if rtol == 0:
+            norm = self.mass2
+            allowed = norm >= -atol
+            if atol == 0:
+                # A negative squared invariant may round to negative zero.
+                allowed = allowed & ~np.signbit(norm)
+            return finite & (self.E >= 0) & allowed
         with np.errstate(invalid='ignore', over='ignore', under='ignore', divide='ignore'):
             scale, norm = scaled_invariant(self.E, self.px, self.py, self.pz, self._lib)
             denominator = backend_where(scale == 0, 1., scale, self._lib)
@@ -585,6 +592,8 @@ class LVec:
         """Minkowski scalar product with metric (+, -, -, -), in common units."""
         if not isinstance(other, LVec):
             raise TypeError("other must be an LVec")
+        if other is self:
+            return self.mass2
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
             result = (self.E * other.E - self.px * other.px
                       - self.py * other.py - self.pz * other.pz)
