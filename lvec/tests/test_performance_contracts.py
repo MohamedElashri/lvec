@@ -7,6 +7,19 @@ from lvec import LVec, Vector2D, Vector3D, ShapeError
 from lvec.caching import PropertyCache
 
 
+@pytest.mark.parametrize('factory', [LVec, LVec.from_p4, LVec.from_ptepm])
+def test_public_factories_preserve_explicit_cache_policy(factory):
+    # Each constructor receives a different coordinate representation, but its
+    # cache controls must apply to the returned vector in every case.
+    components = [np.full(3, value) for value in (3., 0., 0., 4.)]
+    v = factory(*components, max_cache_size=0, cache_stats=False,
+                cache_intermediates=True)
+    first = v.mass.copy()
+    np.testing.assert_array_equal(v.mass, first)
+    assert v.cache_size == 0
+    assert v.cache_stats['overall']['total'] == 0
+
+
 def test_mass_only_retains_final_array_and_intermediates_are_opt_in():
     data = [np.full(1000, x) for x in (1., 2., 3., 5.)]
     final = LVec(*data)
