@@ -165,3 +165,47 @@ def test_causal_classification_and_null_units():
     null=LVec(1.,0.,0.,1.).unit()
     assert null.px==np.inf and null.py==0. and null.E==np.inf
     assert np.isnan(Vector2D(np.nan,1.).unit().x)
+
+
+def test_reference_and_gamma_boosts_analytic():
+    v=LVec(1.,2.,3.,8.)
+    b=Vector3D(.2,-.1,.3)
+    assert v.boost(b).allclose(v.boost(*b._components()),rtol=1e-14)
+    assert v.boost(booster=b).allclose(v.boost_beta3(b),rtol=1e-14)
+    reference=LVec(.2,-.1,.3,1.)
+    assert v.boost(reference).allclose(v.boost_beta3(reference.to_beta3()),rtol=1e-14)
+    rest=reference.boostCM_of(reference)
+    np.testing.assert_allclose(rest._components()[:3],0.,atol=1e-14)
+    assert rest.E==pytest.approx(reference.mass)
+    assert v.boostCM_of_beta3(b).allclose(v.boost(-.2,.1,-.3))
+    for axis in 'XYZ':
+        for beta in (.2,-.2,0.):
+            gamma=np.copysign(1/np.sqrt(1-beta*beta),beta)
+            assert getattr(v,'boost'+axis)(gamma=gamma).allclose(getattr(v,'boost'+axis)(beta=beta),rtol=1e-14)
+    with pytest.raises(TypeError):v.boostX()
+    with pytest.raises(TypeError):v.boostX(beta=.2,gamma=2.)
+    from lvec.exceptions import InputError
+    for reference in (LVec(1.,0.,0.,1.),LVec(2.,0.,0.,1.),LVec(1.,0.,0.,-2.)):
+        with pytest.raises(InputError):v.boost_p4(reference)
+
+
+def test_boosts_extreme_decimal_and_awkward():
+    from decimal import Decimal,localcontext
+    v=LVec(1.,0.,0.,1.)
+    gamma=-1e16
+    with localcontext() as ctx:
+        ctx.prec=90
+        g=Decimal.from_float(abs(gamma));u=((g-1)*(g+1)).sqrt()
+        expected=float(g-u)
+    boosted=v.boostX(gamma=gamma)
+    assert boosted.E==pytest.approx(expected,rel=1e-15)
+    assert boosted.px==pytest.approx(expected,rel=1e-15)
+    reference=LVec(1e16-2.,0.,0.,1e16)
+    rest=reference.boostCM_of_p4(reference)
+    assert rest.px==pytest.approx(0.,abs=1e-60)
+    assert rest.E==pytest.approx(reference.mass,rel=1e-15)
+    ak=pytest.importorskip('awkward')
+    jagged=LVec(ak.Array([[1.,None],[],None,[2.]]),0.,0.,3.)
+    result=jagged.boostX(gamma=ak.Array([[2.,None],[],None,[-2.]]))
+    assert ak.to_list(ak.is_none(result.px,axis=0))==[False,False,True,False]
+    assert result.boostX(gamma=ak.Array([[-2.,None],[],None,[2.]])).allclose(jagged)

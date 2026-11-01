@@ -428,7 +428,7 @@ class LVec(LorentzAPI):
         return LVec._from_owned(self.px[idx], self.py[idx],
                    self.pz[idx], self.E[idx])
     
-    def boost(self, bx, by, bz):
+    def boost(self, bx=None, by=None, bz=None, *, booster=None):
         """
         Apply Lorentz boost.
         
@@ -437,6 +437,14 @@ class LVec(LorentzAPI):
             BackendError: If there's an issue with the backend calculations
             DependencyError: If required backend package is not available
         """
+        if booster is not None:
+            if bx is not None or by is not None or bz is not None:
+                raise TypeError("Specify a booster or three beta components")
+            bx=booster
+        if by is None and bz is None and isinstance(bx,SpatialAPI):
+            return self.boost_p4(bx) if isinstance(bx,LorentzAPI) else self.boost_beta3(bx)
+        if bx is None or by is None or bz is None:
+            raise TypeError("Specify a 3D/4D booster or all three beta components")
         try:
             # Normalize array-like boost components without changing vector
             # component broadcasting rules.
