@@ -17,6 +17,8 @@ LVec aims to simplify HEP analysis by providing a unified interface for working 
 
 ```bash
 pip install lvec
+# Include jagged-array support:
+pip install "lvec[awkward]"
 ```
 
 For development installation:
@@ -44,8 +46,8 @@ print(f"pt: {v.pt}")
 v2 = LVec.from_ptepm(pt=5.0, eta=0.0, phi=0.0, m=1.0)
 
 # Vector operations
-v3 = v1 + v2
-v4 = v1 * 2.0
+v3 = v + v2
+v4 = v * 2.0
 ```
 
 ### Memory Optimization
@@ -200,12 +202,42 @@ vectors_ak = LVec(ak.Array(px), ak.Array(py), ak.Array(pz), ak.Array(E))
 ## Requirements
 
 - Python >= 3.10
-- NumPy >= 1.20.0
-- Awkward >= 2.0.0
+- NumPy >= 2.2.4
+- Awkward >= 2.7.4 (optional, install `lvec[awkward]`)
 
-For development:
-- pytest >= 7.0.0
-- uproot >= 5.0.0
+Install `lvec[test]` for pytest, `lvec[examples]` for ROOT-reading and plotting
+examples, or `lvec[benchmark]` for comparison and memory benchmarks.
+`lvec[dev]` includes all of these. NumPy is the only mandatory runtime dependency.
+
+## Physics conventions and validation
+
+Use consistent momentum, mass, and energy units throughout an analysis, with
+c=1 and metric (+, -, -, -). `mass2` returns E²-|p|² unchanged; `mass` is
+sign(mass2) sqrt(abs(mass2)), so spacelike vectors have negative signed mass.
+This corrects the earlier behavior that took the absolute value of negative
+mass squared. General mathematical four-vectors, including negative energy,
+are accepted so subtraction and negative scaling remain valid.
+
+For physical particles, opt in to checks:
+
+```python
+particle = LVec(1., 2., 3., 5., validate=True)
+mask = vectors.is_physical()  # finite, E >= 0, timelike/lightlike within tolerance
+particle.validate_particle(rtol=1e-12, atol=0.)
+```
+
+The relative tolerance scales with max(E², |p|²); `atol` has units of energy
+squared. Validation never changes raw mass squared. Missing Awkward entries
+remain missing and are excluded from the aggregate particle check.
+
+`eta` uses asinh(pz/pt), with signed infinity on the beam axis and zero for
+the zero spatial vector. Boost velocities must be finite with |beta| < 1.
+`boost(beta)` is active: a rest particle acquires momentum in the direction
+of beta. A `Frame` stores its physical velocity relative to the lab;
+`Frame.from_lvec(v)` now uses +p/E. `to_frame(frame)` assumes lab coordinates
+and applies -beta. `transform_frame(source, target)` first applies +beta_source,
+then -beta_target. These sign corrections make both CM transformation paths
+agree and are a change from the earlier inconsistent frame convention.
 
 ## Citation
 
@@ -243,3 +275,22 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+### Component ownership
+
+Construction snapshots NumPy and Awkward component arrays and marks their
+NumPy buffers read-only. Changing caller-owned inputs cannot change a vector
+or leave its cached observables stale. Public component arrays reject ordinary
+in-place edits; create a new vector for changed components. This adds a copy at
+construction. Deliberate manipulation of private buffers, Awkward `.layout` replacement,
+or forcibly changing writeability is outside the supported API.
+
+Components are promoted to float64 before physics arithmetic, including integer
+and float32 arrays. This avoids integer overflow in squared momenta and provides
+the same precision policy for scalar, NumPy, and Awkward inputs. Complex-valued
+components are not supported.
+
+Internal NumPy arithmetic reuses freshly allocated results and existing owned
+read-only components instead of snapshotting them again. Public constructors
+continue to snapshot external inputs; this private optimization does not expose
+a borrowed mutable-input mode.
