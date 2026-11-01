@@ -310,3 +310,131 @@ For publication, retain the full Markdown reports (including raw samples) and
 an environment export with the analysis or supplementary materials. A versioned
 summary alone does not contain the raw data needed for reanalysis. See the
 [root citation guidance](../README.md#citation) for software attribution.
+
+## Core parity update
+
+The expanded numerical API was measured on 1 November 2026 at clean revision
+`1a178b86f3ead707004ca3eb0cd87bcb0ad687b7`. This update supplements the earlier
+130-row scaling study; those earlier tables retain their original source and
+framework versions. The expanded run contains **106 rows**, and the matched
+revision study contains **108 rows** across six additional reports.
+
+The environment and hardware are the same as described above: Python 3.13.12,
+NumPy 2.5.4, Awkward 2.14.0, vector 1.9.0, Apple M1, 16 GiB, macOS 27.2 arm64,
+and one numerical runtime thread. Samples target 20 ms with two warmups, seed
+20261101. The expanded run uses three fresh processes and seven samples per
+case-process. Allocation tracing was disabled for this focused timing update.
+The large NumPy case has 100,000 particles; the large jagged case has 100,000
+events and 401,402 particles, so their absolute times are not directly comparable.
+
+- Library SHA256: `df2313a4bc40154e98382feb993a6445eb125298dc59c906cd1c817a8c6aaebc`.
+- Framework SHA256: `946220ae829fd055f47e850ea794ea9b4657fa11261c4622ec3f4323c3218460`.
+- Baseline revision: `195c5dedd309d5507890ef62ed4cb53d708c2f98`, with library
+  SHA256 `d0c5dcb1f6c62a8bc2e0109f1b360f181eb66ba283c70fed780800416b93ad36`.
+  Its source was extracted with `git archive`; its reports therefore say that
+  Git revision metadata is unavailable, and the archive's reported dirty flag
+  is not meaningful. The verified source fingerprint identifies it.
+
+### New operations
+
+Times below are **milliseconds per call, median ± MAD**, pooled from 21 samples.
+Each timed call returns a new vector collection. Normalization clears the input
+cache first; the fused normalization kernel computes the invariant itself.
+Matrices are the specified diagonal fixture, rather than an arbitrary dense
+matrix workload. Axis and Euler rotations use the fixtures in the workload table.
+
+| Operation | NumPy LVec | NumPy vector | Jagged LVec | Jagged vector |
+| --- | ---: | ---: | ---: | ---: |
+| Four-vector normalization | 0.616 ± 0.015 | 2.286 ± 0.150 | 6.103 ± 1.916 | 11.863 ± 0.851 |
+| Gamma-parameterized x boost | 0.436 ± 0.018 | 0.939 ± 0.068 | 5.015 ± 0.401 | 7.807 ± 0.651 |
+| Diagonal 4x4 transform | 0.924 ± 0.014 | 1.916 ± 0.033 | 8.247 ± 2.234 | 7.481 ± 0.290 |
+| Arbitrary-axis rotation | 1.101 ± 0.037 | 1.361 ± 0.038 | 11.332 ± 0.918 | 6.167 ± 0.940 |
+| Euler rotation | 1.059 ± 0.042 | 1.457 ± 0.089 | 9.761 ± 1.310 | 4.791 ± 0.326 |
+
+The NumPy normalization, gamma-boost, and diagonal-transform fixtures favor LVec.
+The jagged gamma and normalization fixtures also favor LVec; the jagged matrix
+comparison is noisy. Jagged arbitrary-axis and Euler rotations remain slower,
+by approximately 1.8x and 2.0x in this run. Numerical risk detection and separate
+owned components have costs; these results do not establish universal parity.
+
+Small arrays also retain Python overhead. For one-element NumPy arrays, the
+matrix fixture took 150.875 ± 2.303 µs in LVec versus 29.732 ± 0.291 µs in vector;
+Euler rotation took 145.049 ± 2.119 µs versus 26.713 ± 0.333 µs. These are array
+measurements, not Python-float scalar measurements. The size-one jagged input
+is an empty event and must not be interpreted as a single-particle calculation.
+
+Native Awkward record mass took 3.680 ± 0.659 ms versus 3.841 ± 0.283 ms
+for vector's recomputed record mass. Native records have ordinary Awkward view
+semantics and no retained property cache. Owned `mass_hot` represents a cached
+read, so it is not a comparable calculation boundary.
+
+### Matched revision checks
+
+The first full-run comparison showed a 35% jagged workflow increase while the
+unchanged vector workflow also increased by 39%. That observation prompted a
+matched study rather than a no-regression claim. Both revisions then ran with
+identical case selections and inputs, alternating in the order before/after,
+after/before, before/after. Each invocation used one fresh process and seven
+samples, giving 21 samples per revision-case across three rounds. Case order
+was the same within each pair; the numerical seed did not change.
+
+The table reports pooled **milliseconds per call, median ± MAD**. Ratios quoted
+below are medians of the three within-round median ratios, which can differ
+from ratios of these pooled medians.
+
+| Layout | Case | Original main | Core parity revision |
+| --- | --- | ---: | ---: |
+| numpy | `construct_mass` | 0.618 ± 0.029 | 0.628 ± 0.042 |
+| numpy | `mass_uncached` | 0.334 ± 0.020 | 0.319 ± 0.016 |
+| numpy | `add` | 0.230 ± 0.009 | 0.207 ± 0.008 |
+| numpy | `boost` | 1.523 ± 0.042 | 1.622 ± 0.100 |
+| numpy | `rotate` | 0.404 ± 0.010 | 0.398 ± 0.006 |
+| numpy | `workflow` | 2.351 ± 0.049 | 2.406 ± 0.117 |
+| jagged | `construct_mass` | 5.227 ± 0.149 | 5.245 ± 0.236 |
+| jagged | `mass_uncached` | 3.250 ± 0.222 | 3.209 ± 0.184 |
+| jagged | `add` | 2.748 ± 0.106 | 2.800 ± 0.126 |
+| jagged | `boost` | 8.775 ± 0.221 | 9.295 ± 0.287 |
+| jagged | `rotate` | 8.728 ± 0.168 | 8.762 ± 0.161 |
+| jagged | `workflow` | 14.940 ± 0.678 | 14.847 ± 0.758 |
+
+The median paired workflow ratios were 1.000 for NumPy and 1.020 for jagged data;
+the large apparent workflow penalty did not persist. Beta boosts had ratios
+1.103 and 1.085, respectively, and remain a performance follow-up rather than
+evidence of zero overhead. The numerical kernels for those established boosts
+were retained; the measurements cannot attribute the observed differences to
+one cause. The unchanged vector jagged workflow itself varied substantially
+between paired invocations. Repeat on controlled target hardware before making
+claims about differences of this size.
+
+### Repeating the focused update
+
+Use the dependency versions above and a clean checkout of the measured revision.
+The expanded suite command is:
+
+```bash
+python -m benchmarks --layouts numpy jagged --sizes 1 100000 --compare-vector \
+  --processes 3 --samples 7 --no-memory --output /tmp/lvec-core-expanded.md
+```
+
+For the matched study, prepare a separate checkout of the baseline revision.
+Run the following with `--source` pointing to each revision, in the alternating
+order above, retaining six separate Markdown reports:
+
+```bash
+python -m benchmarks --source /path/to/revision --layouts numpy jagged \
+  --sizes 100000 --cases construct_mass mass_uncached add boost rotate workflow \
+  vector.construct_mass vector.mass vector.workflow --compare-vector \
+  --processes 1 --samples 7 --no-memory --output /tmp/lvec-core-paired-run.md
+```
+
+The current framework loads workload definitions from the invoking checkout
+while `--source` selects the LVec implementation. Use the same framework for
+both revisions. Source and framework fingerprints, exact invocations, timestamps,
+loop counts, and raw samples are retained in the local reports. The source
+archive and reports are kept outside Git; only this summary is tracked.
+
+Validation for the implementation includes 544 passing tests with current
+and minimum dependencies and on Python 3.15, plus 270 passing NumPy-only tests
+with optional-backend tests skipped. See the [coverage matrix](../docs/vector-feature-parity.md)
+and [migration guide](../docs/vector-migration.md) for numerical policies and
+ownership contracts. Timing agreement does not replace independent physics checks.
