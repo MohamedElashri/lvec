@@ -613,8 +613,19 @@ class LVec:
         """
         if self._lib == 'ak':
             import awkward as ak
+            # An independently missing component is not a missing particle.
+            # Reject it rather than silently summing incomplete four-vectors.
+            # These kernels inspect each nesting depth, never individual events.
+            values = self.to_p4()
+            if any(c.ndim != values[0].ndim for c in values):
+                raise ShapeError("Reduction components must have matching dimensions")
+            for depth in range(values[0].ndim):
+                masks = [ak.to_numpy(ak.flatten(ak.is_none(c, axis=depth),
+                                               axis=None)) for c in values]
+                if any(not np.array_equal(mask, masks[0]) for mask in masks[1:]):
+                    raise ShapeError("Reduction components must have matching missing-value masks")
             components = [ak.sum(c, axis=axis, keepdims=keepdims,
-                                 mask_identity=False) for c in self.to_p4()]
+                                 mask_identity=False) for c in values]
         else:
             components = [np.sum(c, axis=axis, keepdims=keepdims)
                           for c in self.to_p4()]

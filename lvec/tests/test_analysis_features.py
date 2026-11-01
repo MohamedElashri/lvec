@@ -123,7 +123,9 @@ def test_numpy_properties_match_vector():
     px, py, pz = rng.normal(size=(3, 40))
     energy = np.sqrt(px**2 + py**2 + pz**2 + .7**2)
     v = LVec(px, py, pz, energy)
-    oracle = vector.array(dict(px=px, py=py, pz=pz, E=energy))
+    # Generic coordinate names avoid vector's deprecated in-place dtype rename
+    # under NumPy 2.5; the public momentum view supplies momentum aliases.
+    oracle = vector.array(dict(x=px, y=py, z=pz, t=energy)).view(vector.MomentumNumpy4D)
     np.testing.assert_allclose(v.rapidity, oracle.rapidity, rtol=1e-12)
     np.testing.assert_allclose(v.beta, oracle.beta, rtol=1e-12)
     np.testing.assert_allclose(v.gamma, oracle.gamma, rtol=1e-12)
@@ -168,4 +170,23 @@ def test_awkward_properties_angles_and_missing_events():
     assert angles[:3] == [[0., None], [], None]
     assert np.isnan(angles[3][0])
     rest = v.boost_to_rest()
-    assert ak.to_list(rest.px) == [[0., None], [], None, [0.]]
+    assert ak.to_list(ak.num(rest.px, axis=1)) == [2, 0, None, 1]
+    assert ak.to_list(ak.is_none(rest.px, axis=1)) == [[False, True], [], None, [False]]
+    np.testing.assert_allclose(ak.to_numpy(ak.flatten(rest.px, axis=None)),
+                               0., atol=1e-14)
+
+
+@pytest.mark.parametrize('missing_level', ['particle', 'event', 'nested_list'])
+def test_awkward_reduction_rejects_incomplete_four_vectors(missing_level):
+    ak = pytest.importorskip('awkward')
+    if missing_level == 'particle':
+        px, py = ak.Array([[1., None], []]), ak.Array([[None, 1.], []])
+    elif missing_level == 'event':
+        px, py = ak.Array([None, [1.]]), ak.Array([[1.], None])
+    else:
+        px = ak.Array([[[1.], None], []])
+        py = ak.Array([[None, [1.]], []])
+    # Newer constructor validation may reject these immediately. The reducer
+    # also guards the contract when used independently of that implementation.
+    with pytest.raises(ShapeError):
+        LVec(px, py, px, px).sum(axis=-1)
