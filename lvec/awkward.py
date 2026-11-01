@@ -176,13 +176,12 @@ def _cartesian_records(columns):
     if dimension not in (2,3,4) or set(canonical)!=set('xyzt'[:dimension]):return None
     records=ak.zip(canonical,with_name=f'LVec{dimension}D',
                    behavior=behavior,optiontype_outside_record=True)
-    record_type=ak.type(records)
-    while isinstance(record_type,(ak.types.ArrayType,ak.types.ListType,
-                                  ak.types.RegularType,ak.types.OptionType)):
-        record_type=record_type.content
-    if isinstance(record_type,ak.types.RecordType) and all(
-            (isinstance(field,ak.types.NumpyType) and field.primitive=='float64' and not field.parameters)
-            or isinstance(field,ak.types.UnknownType) for field in record_type.contents):
+    layout=records.layout.array if isinstance(records,ak.Record) else records.layout
+    while layout.is_list or layout.is_option or layout.is_indexed:
+        layout=layout.content
+    if layout.is_record and all(
+            (field.is_numpy and field.dtype==np.dtype('float64') and not field.parameters)
+            or field.is_unknown for field in layout.contents):
         # zip guarantees a common record structure and whole-vector masks.
         # Its leaf schema proves canonical real components without four field
         # projections, another broadcast walk, or a no-op astype traversal.

@@ -189,8 +189,24 @@ def transform(values, matrix, dimension):
     if all(isinstance(c,float) or (isinstance(c,np.ndarray) and c.ndim==0) for c in coefficients):
         return _constant_transform(values,tuple(float(c) for c in coefficients),dimension),True
     count=len(values)
+    def short(coords,coeffs):
+        shape=coords[0].shape
+        out=tuple(np.empty(shape,dtype=np.float64) for _ in range(dimension))
+        coeffs=tuple(float(c) if isinstance(c,float) or c.ndim==0 else c for c in coeffs)
+        for index in range(coords[0].size):
+            point=tuple(float(c.flat[index]) for c in coords[:dimension])
+            for i,target in enumerate(out):
+                row=tuple(c if isinstance(c,float) else float(c.flat[index])
+                          for c in coeffs[i*dimension:(i+1)*dimension])
+                target.flat[index]=_scalar_row(point,row)
+        return out+tuple(coords[dimension:])
+    if not any(is_ak(c) for c in (*values,*coefficients)):
+        coords=tuple(np.asarray(c) for c in values)
+        if coords[0].size<=8 and all(isinstance(c,float) or c.ndim==0 or c.shape==coords[0].shape for c in coefficients):
+            return short(coords,coefficients),True
     def kernel(*arrays):
         coords=arrays[:count];coeffs=arrays[count:]
+        if coords[0].size<=8:return short(coords,coeffs)
         out=[]
         with np.errstate(over='ignore',under='ignore',invalid='ignore'):
             bounds=[_bound(c) for c in coords[:dimension]]
@@ -238,7 +254,7 @@ def transform(values, matrix, dimension):
         return tuple(out)+tuple(coords[dimension:])
     kernel.outputs=count
     scalar=all(not is_ak(c) and np.ndim(c)==0 for c in coefficients)
-    return dispatch_parameters(kernel,values,coefficients),scalar
+    return dispatch_parameters(kernel,values,coefficients),scalar or not any(is_ak(c) for c in (*values,*coefficients))
 
 
 def rotation_matrix(axis,angle):
