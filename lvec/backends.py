@@ -246,6 +246,20 @@ def own_components(*components):
     return tuple(owned)
 
 
+def own_computed_structure(value):
+    """Own computed Awkward metadata, retaining proven-owned numeric leaves.
+
+    Internal producers may reuse immutable input leaves or fresh arithmetic
+    leaves. Offsets/indices/masks can still originate in external parameters;
+    snapshot those buffers before freezing the result. Never use for public
+    constructor inputs or arbitrary external views.
+    """
+    form,length,buffers=ak.to_buffers(value,buffer_key='{form_key}-{attribute}')
+    owned={key:buffer if key.endswith('-data') else buffer.copy()
+           for key,buffer in buffers.items()}
+    return freeze_array(ak.from_buffers(form,length,owned))
+
+
 def normalize_scalar(value):
     """Normalize real NumPy scalar types without discarding imaginary parts."""
     if isinstance(value, (complex, np.complexfloating)):

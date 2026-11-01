@@ -27,6 +27,7 @@ def test_algebra_and_native_numpy(cls, n):
     assert a.reshape(4).shape == (4,)
     assert len(a) == 2
     assert np.count_nonzero(a) == 4
+    np.testing.assert_allclose(a.lib.sqrt(a.rho2),a.rho)
     with pytest.raises(TypeError, match='out'):
         np.add(a,b,out=a)
     with pytest.raises(TypeError):
@@ -332,3 +333,68 @@ def test_keyword_numpy_functions_and_broadcasts():
     assert np.allclose(a=c,b=d)
     assert np.sum(a=c).allclose(Vector2D(6.,0.))
     assert np.all(np.power(c,np.full((2,3),2.))==1.)
+
+
+@pytest.mark.parametrize('operation',['matrix','gamma','divide','scale'])
+def test_computed_results_snapshot_external_awkward_structure(operation):
+    ak=pytest.importorskip('awkward')
+    offsets=np.array([0,2,3],dtype=np.int64)
+    content=np.array([2.,3.,4.])
+    parameter=ak.Array(ak.contents.ListOffsetArray(ak.index.Index64(offsets),ak.contents.NumpyArray(content)))
+    source=LVec(ak.Array([[1.,2.],[3.]]),0.,0.,5.)
+    if operation=='matrix':
+        result=source.transform3D({'xx':parameter,'xy':0.,'xz':0.,'yx':0.,'yy':1.,'yz':0.,'zx':0.,'zy':0.,'zz':1.})
+    elif operation=='gamma':result=source.boostX(gamma=parameter)
+    elif operation=='divide':result=source/parameter
+    else:result=source.scale3D(parameter)
+    snapshot=[ak.to_list(c) for c in result._components()]
+    assert offsets.flags.writeable and content.flags.writeable
+    _,_,input_buffers=ak.to_buffers(parameter)
+    for component in result._components():
+        _,_,output_buffers=ak.to_buffers(component)
+        assert not any(np.shares_memory(a,b) for a in input_buffers.values() for b in output_buffers.values())
+    content[:]=9.
+    offsets[:]=[0,1,3]
+    assert [ak.to_list(c) for c in result._components()]==snapshot
+
+
+def test_new_squared_observables_preserve_range_semantics():
+    a=Vector3D(np.array([1e308,1e-300]),0.,0.)
+    np.testing.assert_array_equal(a.mag2,[np.inf,0.])
+    np.testing.assert_array_equal(a.pt2,[np.inf,0.])
+    v=LVec(0.,0.,0.,np.array([1e308,1e-300]))
+    np.testing.assert_array_equal(v.E2,[np.inf,0.])
+    ak=pytest.importorskip('awkward')
+    v=LVec(ak.Array([[1.],[],None,[2.,3.]]),0.,0.,5.)
+    assert ak.to_list(v.Mt)==[[5.],[],None,[5.,5.]]
+    assert ak.to_list(v.is_timelike())==[[True],[],None,[True,True]]
+
+
+def test_new_observable_aliases_share_bounded_cache():
+    v=LVec(np.ones(4),0.,0.,2.)
+    assert v.E2 is v.energy2
+    assert v.Et is v.transverse_energy
+    assert v.Mt is v.mt
+    old=v.Mt
+    v.touch()
+    assert v.Mt is not old
+    assert not v.Mt.flags.writeable
+    bounded=LVec(np.ones(4),0.,0.,2.,max_cache_size=1)
+    for _ in range(2):
+        np.testing.assert_allclose(bounded.Et,2.)
+        assert bounded.cache_size<=1
+        np.testing.assert_allclose(bounded.Mt,2.)
+        assert bounded.cache_size<=1
+
+
+@pytest.mark.parametrize('cls,n',[(Vector2D,2),(Vector3D,3),(LVec,4)])
+def test_optional_partial_scale_parameters_propagate_whole_vector_mask(cls,n):
+    ak=pytest.importorskip('awkward')
+    v=cls(ak.Array([[1.,2.],[],[3.]]),*([5.]*(n-1)))
+    factors=ak.Array([[2.,None],[],[3.]])
+    for method in ('scale2D','scale3D') if n>=3 else ('scale2D',):
+        result=getattr(v,method)(factors)
+        assert ak.to_list(result.x)==[[2.,None],[],[9.]]
+        if n==4:assert ak.to_list(result.E)==[[5.,None],[],[5.]]
+        for component in result._components():
+            assert ak.to_list(ak.is_none(component,axis=-1))==[[False,True],[],[False]]
