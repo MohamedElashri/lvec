@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+type: software
+message: >-
+  If you use LVec in research, please cite the software and record the exact
+  release version or Git commit used, along with the relevant dependencies.
+title: 'LVec: Lorentz and spatial vectors for physics analysis'
+authors:
+  - family-names: Elashri
+    given-names: Mohamed
+repository-code: 'https://github.com/MohamedElashri/lvec'
+repository-artifact: 'https://pypi.org/project/lvec/'
+url: 'https://github.com/MohamedElashri/lvec'
+abstract: >-
+  LVec provides Lorentz four-vectors and spatial vectors for physics analysis
+  with NumPy and optional Awkward Array backends. It includes reference-frame
+  transformations, event reductions, angular observables, cached properties,
+  and selective numerical precision recovery.
+keywords:
+  - physics
+  - Lorentz vectors
+  - relativistic kinematics
+  - NumPy
+  - Awkward Array
