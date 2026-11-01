@@ -37,6 +37,27 @@ def ensure_array(*args):
             import awkward as ak
             values = [np.asarray(arg).item() if scalar else to_ak(arg)
                       for arg, scalar in zip(args, scalars)]
+
+            def numeric_type(array_type):
+                # Inspect type metadata, not particles. Strings are represented
+                # by lists of uint8, so their semantic parameters matter too.
+                if array_type.parameters.get('__array__') in {
+                        'string', 'bytestring', 'char', 'byte'}:
+                    return False
+                if isinstance(array_type, ak.types.UnknownType):
+                    return True  # Empty/all-missing arrays carry no values.
+                if isinstance(array_type, ak.types.NumpyType):
+                    return np.dtype(array_type.primitive).kind in 'biuf'
+                if isinstance(array_type, (ak.types.ListType, ak.types.RegularType,
+                                           ak.types.OptionType)):
+                    return numeric_type(array_type.content)
+                if isinstance(array_type, ak.types.UnionType):
+                    return all(numeric_type(t) for t in array_type.contents)
+                return False  # Records and other nonnumeric semantic types.
+
+            if any(not numeric_type(ak.type(value).content)
+                   for value, scalar in zip(values, scalars) if not scalar):
+                raise TypeError("Vector components must contain real numeric values")
             check_shapes(*[arg for arg, scalar in zip(values, scalars)
                            if not scalar], 'ak')
             # Only scalar values are allowed to expand. Existing array shapes
