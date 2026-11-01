@@ -156,6 +156,10 @@ def core_cases(layout, size, seed, compare_vector=False):
             if name == 'vector.boost_gamma':
                 return Case(name,lambda:other.boostX(gamma=1/np.sqrt(1-.2**2)),
                             lambda r:check_vector(r,boost_reference(data,(.2,0.,0.))))
+            if name == 'vector.boost':
+                beta=vector.obj(x=BETA[0],y=BETA[1],z=BETA[2])
+                return Case(name,lambda:other.boost_beta3(beta),
+                            lambda r:check_vector(r,boost_reference(data)))
             if name == 'vector.matrix4d':
                 return Case(name,lambda:other.transform4D(MATRIX4),
                             lambda r:check_vector(r,tuple((i+2)*c for i,c in enumerate(data))))
@@ -204,6 +208,12 @@ def core_cases(layout, size, seed, compare_vector=False):
         if name == 'record_mass':
             records=v.to_ak_record(with_behavior=True)
             return Case(name,lambda:records.mass,lambda r:assert_values(r,mass_reference()))
+        if name == 'record_construct':
+            from lvec.awkward import zip as record_zip
+            fields=dict(zip(('px','py','pz','E'),data))
+            def check_records(r):
+                for value,wanted in zip((r.px,r.py,r.pz,r.E),data):assert_values(value,wanted)
+            return Case(name,lambda:record_zip(fields),check_records)
         if name == "mass_hot":
             v.mass
         if name in {"mass_cold", "mass_hot", "mass_uncached"}:
@@ -242,10 +252,10 @@ def core_cases(layout, size, seed, compare_vector=False):
              "properties_intermediates", "add", "boost", "rotate", "sum", "workflow",
              "unit_cold", "rotate_axis", "rotate_euler", "boost_gamma", "matrix4d"]
     if layout in {'jagged','missing','deep','heavy-tail'}:
-        names += ['record_mass']
+        names += ['record_mass','record_construct']
     if compare_vector and layout in {"numpy", "jagged"}:
         names += ["construct_mass", "vector.construct", "vector.construct_mass", "vector.mass", "vector.workflow",
-                  'vector.unit_cold','vector.rotate_axis','vector.rotate_euler','vector.boost_gamma','vector.matrix4d']
+                  'vector.unit_cold','vector.rotate_axis','vector.rotate_euler','vector.boost_gamma','vector.matrix4d','vector.boost']
     return [CaseSpec(name, lambda name=name: prepare(name)) for name in names], metadata
 
 

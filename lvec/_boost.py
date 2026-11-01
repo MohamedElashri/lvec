@@ -4,7 +4,7 @@ from decimal import Context, Decimal, localcontext
 import numpy as np
 
 from ._adaptive import _dispatch
-from ._transform import dispatch_parameters, _bound
+from ._transform import dispatch_parameters, dispatch_owned, _bound
 
 
 def _context(values):
@@ -53,7 +53,9 @@ def gamma_axis_boost(values, signed_gamma, axis):
     def kernel(px,py,pz,e,parameter):
         p=(px,py,pz)[axis]
         original_parameter=parameter
-        if parameter.size and not any(parameter.strides):parameter=float(parameter.flat[0])
+        if isinstance(parameter,np.ndarray) and parameter.size and not any(parameter.strides):parameter=float(parameter.flat[0])
+        if np.isscalar(parameter) and p.size<=8:
+            return _small_gamma_axis((px,py,pz,e),float(parameter),axis)
         with np.errstate(over='ignore',under='ignore',invalid='ignore'):
             g=abs(parameter)
             u=np.copysign(np.sqrt(g-1)*np.sqrt(g+1),parameter)
@@ -72,7 +74,8 @@ def gamma_axis_boost(values, signed_gamma, axis):
             risk=risk&np.isfinite(p)&np.isfinite(e)
         spatial,energy=np.asarray(spatial).copy(),np.asarray(energy).copy()
         for i in np.flatnonzero(risk):
-            row=[float(x.flat[i]) for x in (p,e,original_parameter)]
+            row=[float(p.flat[i]),float(e.flat[i]),
+                 float(original_parameter) if np.isscalar(original_parameter) else float(original_parameter.flat[i])]
             with _context(row):
                 q,t,parameter_d=map(Decimal.from_float,row)
                 g=abs(parameter_d)
@@ -83,4 +86,31 @@ def gamma_axis_boost(values, signed_gamma, axis):
         out[axis]=spatial
         return tuple(out)
     kernel.outputs=4
+    if np.isscalar(signed_gamma) or (isinstance(signed_gamma,np.ndarray) and signed_gamma.ndim==0):
+        parameter=float(signed_gamma)
+        def scalar_kernel(*coords):return kernel(*coords,parameter)
+        scalar_kernel.outputs=4
+        return dispatch_owned(scalar_kernel,values)
     return dispatch_parameters(kernel,values,(signed_gamma,))
+
+
+def _small_gamma_axis(values,parameter,axis):
+    g=abs(parameter)
+    u=math.copysign(math.sqrt(g-1)*math.sqrt(g+1),parameter)
+    p,e=values[axis],values[3]
+    spatial=np.empty_like(p);energy=np.empty_like(e)
+    for i in range(p.size):
+        q,t=float(p.flat[i]),float(e.flat[i])
+        a,b=g*q+u*t,g*t+u*q
+        risky=g>1e4 or not math.isfinite(a) or not math.isfinite(b)
+        risky=risky or abs(a)<=math.sqrt(np.finfo(float).eps)*(abs(g*q)+abs(u*t))
+        risky=risky or abs(b)<=math.sqrt(np.finfo(float).eps)*(abs(g*t)+abs(u*q))
+        if risky and math.isfinite(q) and math.isfinite(t):
+            with _context((q,t,parameter)):
+                qd,td,gd=map(Decimal.from_float,(q,t,parameter))
+                gd=abs(gd)
+                ud=((gd-1)*(gd+1)).sqrt().copy_sign(Decimal.from_float(parameter))
+                a,b=float(gd*qd+ud*td),float(gd*td+ud*qd)
+        spatial.flat[i],energy.flat[i]=a,b
+    out=list(values);out[axis]=spatial;out[3]=energy
+    return tuple(out)

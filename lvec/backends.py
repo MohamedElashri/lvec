@@ -1,5 +1,6 @@
 # backends.py
 import numpy as np
+import math
 from .exceptions import DependencyError, InputError
 try:
     import awkward as ak
@@ -198,6 +199,16 @@ def beta_delta(bx, by, bz):
 
 def validate_beta(bx, by, bz, *, return_delta=False):
     """Return beta² after checking finite components and |beta| < 1."""
+    if all(isinstance(b,(float,int)) for b in (bx,by,bz)):
+        if not all(math.isfinite(b) for b in (bx,by,bz)):
+            raise InputError('boost velocity','non-finite','Components must be finite')
+        if any(abs(b)>=1 for b in (bx,by,bz)):
+            raise InputError('boost velocity','magnitude','Must be < 1 (speed of light)')
+        b2=bx*bx+by*by+bz*bz
+        delta=1.-b2
+        if delta>math.sqrt(np.finfo(float).eps):
+            return (b2,delta) if return_delta else b2
+        # Near the light cone, retain exact recovery from the original inputs.
     if backend_any(~np.isfinite(bx) | ~np.isfinite(by) | ~np.isfinite(bz)):
         raise InputError("boost velocity", "non-finite", "Components must be finite")
     # Reject obviously invalid components before squaring to avoid overflow.
@@ -244,6 +255,44 @@ def own_components(*components):
             raise TypeError("Vector components must be real numeric scalars or arrays")
         owned.append(freeze_array(result))
     return tuple(owned)
+
+
+def own_plain_components(*components):
+    """Snapshot validated plain Awkward columns with one shared list skeleton.
+
+    Only parameter-free CPU NumPy/ListOffset/Regular layouts are eligible.
+    Components must already have matching visible shapes. Options, indexing,
+    unions, custom behavior and semantic metadata keep the general copy path.
+    """
+    if not all(is_ak(c) for c in components):return None
+    if any(ak.backend(c)!='cpu' or c.behavior is not None or c.attrs for c in components):return None
+    layouts=[ak.to_layout(c) for c in components]
+    pending=layouts
+    while True:
+        if any(c.parameters for c in pending):return None
+        if all(c.is_numpy for c in pending):break
+        if all(isinstance(c,ak.contents.ListOffsetArray) for c in pending):
+            if any(c.offsets.dtype!=pending[0].offsets.dtype for c in pending):return None
+            pending=[c.content for c in pending]
+        elif all(isinstance(c,ak.contents.RegularArray) for c in pending):
+            pending=[c.content for c in pending]
+        else:return None
+    def copy_columns(nodes):
+        if nodes[0].is_numpy:
+            return [ak.contents.NumpyArray(np.array(c.data,dtype=np.float64,copy=True)) for c in nodes]
+        if isinstance(nodes[0],ak.contents.ListOffsetArray):
+            index=np.array(nodes[0].offsets.data,copy=True)
+            index-=index[0]
+            shared=type(nodes[0].offsets)(index)
+            children=[]
+            for c in nodes:
+                start,stop=int(c.offsets[0]),int(c.offsets[-1])
+                children.append(c.content if start==0 and stop==len(c.content) else c.content[start:stop])
+            return [ak.contents.ListOffsetArray(shared,child) for child in copy_columns(children)]
+        size,length=nodes[0].size,len(nodes[0])
+        children=copy_columns([c.content[:size*length] for c in nodes])
+        return [ak.contents.RegularArray(child,size,zeros_length=length) for child in children]
+    return tuple(freeze_array(ak.Array(layout)) for layout in copy_columns(layouts))
 
 
 def own_computed_structure(value):
