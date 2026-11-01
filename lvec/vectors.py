@@ -1,7 +1,7 @@
 # vectors.py
 import numpy as np
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
-                        backend_sin, backend_cos, backend_atan2, own_components)
+                        backend_sin, backend_cos, backend_atan2, own_components, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_pt, compute_p)
 from .exceptions import ShapeError, InputError, BackendError
 from .caching import PropertyCache
@@ -18,7 +18,7 @@ class Vec2D:
     def __init__(self, x, y):
         self._lib = 'unknown'
         try:
-            self._x, self._y, self._lib = ensure_array(*(float(v) if isinstance(v, np.number) else v for v in (x, y)))
+            self._x, self._y, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y)))
             check_shapes(self._x, self._y, self._lib)
             self._x, self._y = own_components(self._x, self._y)
         except Exception as e:
@@ -166,7 +166,7 @@ class Vec3D:
     def __init__(self, x, y, z):
         self._lib = 'unknown'
         try:
-            self._x, self._y, self._z, self._lib = ensure_array(*(float(v) if isinstance(v, np.number) else v for v in (x, y, z)))
+            self._x, self._y, self._z, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y, z)))
             check_shapes(self._x, self._y, self._z, self._lib)
             self._x, self._y, self._z = own_components(self._x, self._y, self._z)
         except Exception as e:
