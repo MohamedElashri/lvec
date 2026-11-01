@@ -138,6 +138,16 @@ def test_native_cartesian_factory_views_are_live_and_owned_conversion_snapshots(
         record_zip(dict(x=ak.Array([1.+2.j]),y=0.))
 
 
+@pytest.mark.parametrize('dimension',[2,3,4])
+def test_native_cartesian_scalar_record_factory(dimension):
+    ak=pytest.importorskip('awkward')
+    from lvec.awkward import zip as record_zip
+    fields=dict(zip('xyzt'[:dimension],(1.,2.,3.,8.)[:dimension]))
+    records=record_zip(fields)
+    assert isinstance(records,ak.Record)
+    for name,value in fields.items():assert getattr(records,name)==value
+
+
 @pytest.mark.parametrize('awkward',[False,True])
 @pytest.mark.parametrize('dimension',[2,3,4])
 def test_variable_matrix_coefficients_preserve_exact_recovery_and_masks(awkward,dimension):
