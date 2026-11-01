@@ -1,283 +1,299 @@
-# LVec benchmarks
+# LVec benchmark methods and results
 
-This framework measures LVec's scaling, cache tradeoffs, transformations, event
-reductions, complete workflows, and numerical recovery. An optional comparison
-with Scikit-HEP `vector` provides context for a few equivalent ordinary workloads.
-The default run needs only NumPy; no datasets, downloads, plotting packages, or
-benchmark services are used.
+This suite characterizes LVec construction, arithmetic, transformations,
+reductions, cache behavior, traced allocations, and numerical recovery on
+synthetic inputs. Scikit-HEP `vector` is an optional reference for selected
+ordinary workloads. The default suite needs NumPy only and runs offline.
 
-Only framework source, regression tests, and this curated summary belong in Git.
-The old runners, generated plots, and JSON reports have been retired. Reports
-are printed as Markdown, with optional local output; no JSON files are written.
+[Reproduction](#reproduction) · [Experimental setup](#experimental-setup)
+· [Workloads](#workloads) · [Results](#results)
+· [Secondary vector comparison](#secondary-vector-comparison)
+· [Interpretation and validation](#interpretation-and-validation)
 
-## Run from a checkout
+## Reproduction
 
-Use Python 3.10 or newer and run commands from the repository root:
+Run from the repository root. To reproduce the recorded snapshot, first check
+out commit `a6a3236eb107a2916428c6af51bfefd82c7da6d0` in a dedicated checkout and
+use Python 3.13.12 with these dependency versions:
 
 ```bash
-python -m pip install -e ".[test]"
-python -m benchmarks --check --sizes 1 17
-python -m benchmarks
+python -m pip install -e ".[test]" numpy==2.5.4 awkward==2.14.0 vector==1.9.0
+python -m benchmarks --check --layouts numpy strided jagged missing deep heavy-tail extreme --sizes 1 17 --compare-vector
 ```
 
-Install the optional workloads and reference implementation with:
+The recorded runs used the default timing settings and the following selections.
+Add `--output /tmp/run-name.md` to each command to retain its full report.
 
 ```bash
-python -m pip install -e ".[benchmark]"
-python -m benchmarks --layouts numpy strided --sizes 1000 100000 1000000
-python -m benchmarks --layouts jagged --sizes 1000 100000
-python -m benchmarks --layouts missing deep heavy-tail --sizes 1000 10000
-python -m benchmarks --layouts extreme --sizes 1000
-python -m benchmarks --layouts numpy jagged --sizes 1000 100000 --compare-vector
-```
-
-`--check` validates outputs without performance measurement. A fast development
-run can use `--processes 1 --samples 3 --min-time .005`; use the default three
-processes, seven samples, and 20 ms target samples when recording results.
-`--cases mass_cold workflow` selects exact case names; every requested name must
-apply to each selected layout. `--no-memory` omits allocation measurement.
-Progress goes to stderr, leaving stdout suitable for redirection.
-
-```bash
-python -m benchmarks --output benchmarks/results/local.md
-python -m benchmarks --layouts jagged --sizes 1000 > /tmp/lvec-jagged.md
-python -m pytest benchmarks/tests -W error::RuntimeWarning
-```
-
-`benchmarks/results/`, `benchmarks/plots/`, and JSON/JSONL/CSV output under
-`benchmarks/` are ignored. Keep detailed local runs there or outside the checkout;
-update this README with selected results and their exact run configuration.
-
-## Workloads and measurement boundaries
-
-All components are float64. Ordinary inputs have independent standard-normal
-three-momenta and energy `sqrt(px² + py² + pz² + 4)`, giving mass 2. LVec's
-default cache settings are used unless the case name states otherwise.
-
-| Case | Timed work |
-| --- | --- |
-| `construct` | Public construction from existing components, including LVec's owned snapshots |
-| `mass_cold` | Clear an existing object's cache and compute mass; includes cache clearing |
-| `mass_hot` | Read a precomputed mass from a dedicated object's cache |
-| `mass_uncached` | Compute mass with `max_cache_size=0`; no explicit clear |
-| `properties` | Clear cache, then read pt, eta, phi, mass |
-| `properties_intermediates` | Same property sequence with intermediate caching enabled |
-| `add` | Add an existing vector collection to itself |
-| `boost` | Boost by beta `(0.1, 0.05, 0.02)`, returning a fresh collection |
-| `rotate` | Rotate about z by 0.47 radians, returning a fresh collection |
-| `sum` | Sum four-momenta over groups described below |
-| `workflow` | Add, boost, then compute the new collection's mass |
-
-Flat `numpy` and `strided` sizes count particles. Strided construction receives
-noncontiguous views for all four components. Flat reductions use groups of four,
-padding the final group with zeros when necessary. Other flat operations keep
-the original shape. Jagged sizes count **events**, so particle counts differ;
-reports give both generated and visible particle counts.
-
-`jagged` uses multiplicities 0–8 and guarantees an empty first event. `missing`
-adds matching particle/event option masks with approximately 10% missing entries
-at each level. `deep` adds two singleton list levels to the jagged layout.
-`heavy-tail` uses integer Pareto(1.5) multiplicities capped at 128, including empty
-events. Awkward reductions use the innermost axis: in the deep layout that
-reduces particle lists and preserves the outer nesting. Missing particles are
-skipped and missing events remain missing.
-
-The separate `extreme` layout is capped at 10,000 particles:
-
-- `cancellation_mass2` clears cache and computes mass squared for
-  `(1e200, 1, 0, 1e200)`, checking exactly against -1 using rational arithmetic.
-- `mixed_boost_0`, `mixed_boost_1`, and `mixed_boost_100` boost a normal batch
-  containing 0, 1, or up to 100 exceptional entries with `E=px=1e308`, `py=1`,
-  `pz=0` by beta `(-0.9, 0, 0)`. A 400-digit Decimal calculation from the original
-  binary floats checks the exceptional output. Small sizes reduce/deduplicate
-  these counts. Construction and reference calculations are outside timing.
-
-For ordinary workloads, independent NumPy/Awkward formulas check component sums,
-boosts, rotations, properties, and workflow masses. Checks include complete list
-and option structure, not just flattened values. Every case is checked before
-and after measurement. A mismatch, RuntimeWarning, worker failure, or timeout
-fails the command; there is no success-shaped partial report.
-
-## Timing, memory, and reproducibility
-
-Each layout/size runs sequentially in three fresh interpreter processes. Each
-case allocates its own collection during setup and releases it before the next
-case; reference arrays are calculated only during validation. Each
-case gets two explicit warmups, adaptive loop calibration, then seven samples
-of at least approximately 20 ms each (or one slow call). Calibration is capped
-at one million calls/sample. Case order is deterministically shuffled per
-process. The report includes pooled median, median absolute deviation (MAD),
-loops per sample, and the raw samples grouped by process. MAD describes observed
-dispersion; it is not a confidence interval. Very small calls include Python
-call overhead. `timeit` disables cyclic garbage collection during timing.
-
-Allocation measurements run in an additional fresh process per cell after timing
-has finished. Tracing starts after input creation, validation, and warmup. The
-operation's result remains alive while retained/peak traced bytes are read;
-these include traced NumPy buffers and Python bookkeeping allocated during that
-call. Cached reads reuse buffers allocated before tracing. Values exclude input
-storage, prior caches, interpreter overhead, untraced native allocations, and
-total process memory; they are **not RSS** or a claim about total memory use.
-Allocation results are single observations, separate from the timing samples.
-
-The seed defaults to `20261101`, with a fresh local RNG per layout/size. Filtering
-cases or changing run order does not change inputs. Workers set
-`PYTHONHASHSEED=0` and OMP/OpenBLAS/MKL/Accelerate/NumExpr thread limits to one
-before importing numeric libraries. Reports record the timestamp, executable,
-Python/platform/CPU count, package versions, source path, Git revision and dirty
-state, source/framework SHA256 fingerprints, thread settings, and invocation.
-Input generation and validation are excluded from both measurements.
-
-For revision comparisons, keep the framework and interpreter fixed and change
-only the source checkout. Both checkouts must support the selected LVec APIs:
-
-```bash
-python -m benchmarks --source /path/to/baseline --sizes 1000 100000 --output /tmp/lvec-before.md
-python -m benchmarks --source . --sizes 1000 100000 --output /tmp/lvec-after.md
-```
-
-The runner verifies the imported LVec comes from the requested checkout and
-rejects source/environment changes between workers. Compare matching rows in the
-reports, alternating before/after runs if differences are small. Use an idle
-machine on consistent power/thermal settings and record hardware details with
-published results. Dependency versions are recorded, not automatically pinned;
-recreate the recorded versions explicitly for a comparison. Different library
-versions, OS builds, allocators, CPUs, or background load can change results.
-These benchmarks do not impose timing thresholds in CI. CI runs correctness
-checks for the framework through the repository's normal pytest configuration.
-
-## Secondary `vector` comparison
-
-`--compare-vector` adds only ordinary `numpy`/`jagged` comparisons:
-
-| LVec case | `vector` case | Shared boundary |
-| --- | --- | --- |
-| `construct` | `vector.construct` | Construct from the same existing components |
-| `construct_mass` | `vector.construct_mass` | Fresh construction and mass calculation |
-| `mass_uncached` | `vector.mass` | Recalculate mass on existing collections |
-| `workflow` | `vector.workflow` | Add, boost with the same beta, compute mass |
-
-LVec owns read-only component snapshots; `vector` has different representations,
-ownership, and numerical recovery policies. Construction costs reflect those
-public APIs. No artificial copying is added to equalize semantics. The hot LVec
-cache is never used for a cross-package throughput claim. The comparison follows
-the documented [`vector` NumPy constructor](https://vector.readthedocs.io/en/stable/src/make_numpy.html)
-and [`boost_beta3` API](https://vector.readthedocs.io/en/latest/src/vector4d.html).
-Awkward comparisons use `vector.zip`. Extreme numerical cases are LVec-specific
-and excluded from cross-package comparisons. There is no aggregate winner score.
-
-## Recorded results
-
-Measurements on 2026-11-01 used Python **3.13.12**, NumPy **2.5.4**, Awkward
-**2.14.0**, and `vector` **1.9.0**, on arm64 macOS 27.2 with eight logical CPUs
-(CPU model not captured). All runs used the defaults: seed 20261101, three fresh
-processes per cell, seven samples per process, two warmups, 20 ms target samples,
-and one thread for each numeric runtime listed above. These are observations on
-one machine; small differences require repeated runs before drawing conclusions.
-
-LVec was version 0.2.0 at revision `d0221e4e66d4093cb62863fb87b8d726617ec3d3`,
-with a dirty working tree from this benchmark rebuild. The measured library
-source SHA256 was
-`9e957359b2ae9ed4c01c667d68a7d728e1ca2d6cacde3184254f7953b05de7f5`;
-the framework SHA256 was
-`630f43890e91367741d8a442f649adf81c2fdde34727230b2f5e86ce3ae905d6`.
-
-To recreate the dependency versions and workload selections:
-
-```bash
-python -m pip install numpy==2.5.4 awkward==2.14.0 vector==1.9.0
-python -m pip install -e . --no-deps
 python -m benchmarks --layouts numpy --sizes 1000 100000 1000000
 python -m benchmarks --layouts jagged --sizes 1000 100000
-python -m benchmarks --layouts strided missing deep heavy-tail --sizes 10000
+python -m benchmarks --layouts strided --sizes 1000 100000
+python -m benchmarks --layouts missing deep heavy-tail --sizes 10000
 python -m benchmarks --layouts extreme --sizes 1000 10000
 python -m benchmarks --layouts numpy jagged --sizes 100000 --compare-vector --cases construct_mass vector.construct_mass mass_uncached vector.mass workflow vector.workflow
 ```
 
-### LVec scaling
+For a current development run, install `.[benchmark,test]` and use
+`python -m benchmarks`. A short check is available with `--check`; a quick timing
+run can use `--processes 1 --samples 3 --min-time .005`. `--cases` takes exact
+names that must apply to every selected layout. `--no-memory` omits allocation
+measurement. Progress goes to stderr; the Markdown report goes to stdout or
+`--output`. No JSON result files are written.
 
-NumPy times in **µs/call**, shown as **median ± MAD**:
+## Experimental setup
 
-| Case | 1,000 particles | 100,000 particles | 1,000,000 particles |
+The tables below summarize **130 measured rows** from **2026-11-01**. Each timing
+row pools 21 samples from three fresh interpreter processes. These are results
+for a development checkout with version metadata 0.2.0; released wheels may
+contain different code.
+
+| Item | Recorded value |
+| --- | --- |
+| Source revision | `a6a3236eb107a2916428c6af51bfefd82c7da6d0` (clean tree) |
+| Python | 3.13.12 |
+| NumPy / Awkward / vector | 2.5.4 / 2.14.0 / 1.9.0 |
+| CPU / logical CPUs | Apple M1 / 8 |
+| Installed memory | 16 GiB |
+| OS / architecture | macOS 27.2 / arm64 |
+| Seed | 20261101 |
+| Processes / samples / warmups | 3 per layout-size / 7 per case-process / 2 per case |
+| Target sample duration | 20 ms, after adaptive calibration |
+| Numeric runtime threads | 1 for OMP, OpenBLAS, MKL, Accelerate, and NumExpr |
+| CPU affinity / power control | Not pinned / not controlled |
+
+CPU model and memory were read with `sysctl -n machdep.cpu.brand_string hw.memsize`.
+The library source SHA256 is
+`d0c5dcb1f6c62a8bc2e0109f1b360f181eb66ba283c70fed780800416b93ad36`;
+the framework SHA256 is
+`630f43890e91367741d8a442f649adf81c2fdde34727230b2f5e86ce3ae905d6`.
+The library fingerprint covers the top-level `lvec/*.py` files; the framework
+fingerprint covers `benchmarks/*.py`. Each digest includes sorted filenames and
+contents. Reports also record the executable, source path, Git dirty state,
+thread settings, timestamp, loop counts, invocation, and raw samples.
+
+### Measurement protocol
+
+1. Generate seeded input outside timing. Validate an operation before measurement.
+2. Allocate only the current case's collection; release it before the next case.
+3. Warm up, then calibrate a batch toward 20 ms, capped at one million calls.
+   Slow operations can use one call per sample. Record seven samples and validate
+   the result again. `timeit` disables cyclic garbage collection during timing.
+4. Repeat in three fresh processes per layout-size cell. Case order is shuffled
+   deterministically using the seed and process index.
+5. Measure allocations in an additional process after timing, with tracing
+   started after input creation and warmup. Keep the operation result alive while
+   reading retained and peak traced bytes.
+
+Times are **per complete call**. Input generation, setup, reference calculations,
+and validation are excluded. Clearing the cache is included where stated in the
+case definition. Very short calls include Python-call overhead. Loop counts can
+differ between processes; full reports preserve them.
+
+Tables show the **median ± median absolute deviation (MAD)** of pooled samples.
+MAD describes observed dispersion, not a confidence interval or standard error.
+Some large NumPy allocation cases showed substantial variation on this interactive
+workstation. Thread limits do not set CPU affinity, clock frequency, or background
+load. For close comparisons, alternate revisions and repeat on target hardware.
+
+## Workloads
+
+Ordinary components are float64, with independent standard-normal three-momenta
+and `E = sqrt(px² + py² + pz² + 4)`, giving mass 2 up to floating-point rounding.
+Default LVec cache policies are used unless stated otherwise.
+
+| Case | Timed boundary |
+| --- | --- |
+| `construct` | Public construction from existing components, including owned snapshots |
+| `mass_cold` | Clear an existing object's cache, then calculate mass |
+| `mass_hot` | Read an existing mass from a dedicated object's populated cache |
+| `mass_uncached` | Calculate mass on an existing object with `max_cache_size=0` |
+| `properties` | Clear cache; read pt, eta, phi, and mass |
+| `properties_intermediates` | Same sequence with `cache_intermediates=True` |
+| `add` | Add an existing collection to itself |
+| `boost` | Boost by beta `(0.1, 0.05, 0.02)`, returning a new collection |
+| `rotate` | Rotate about z by 0.47 radians, returning a new collection |
+| `sum` | Reduce four-momenta over the groups described below |
+| `workflow` | Add a collection to itself, boost, and calculate the result's mass |
+
+| Layout | Size means | Input definition |
+| --- | --- | --- |
+| `numpy` | Particles | Flat component arrays; reductions use groups of four |
+| `strided` | Particles | Noncontiguous views for all four constructor inputs |
+| `jagged` | Events | Multiplicities 0–8; first event is empty |
+| `missing` | Events | Jagged input with matching particle/event option masks, approximately 10% missing at each level |
+| `deep` | Events | Jagged input with two additional singleton list levels |
+| `heavy-tail` | Events | Integer Pareto(1.5) multiplicities, capped at 128, including empty events |
+| `extreme` | Particles | Separate cancellation and exceptional-boost inputs; capped at 10,000 particles |
+
+Flat reductions pad a final short group with zeros outside timing. Awkward
+reductions use the innermost axis, skipping missing particles and preserving
+missing events. Generated and visible particle counts are both reported.
+Different event layouts therefore do not represent equal amounts of work.
+LVec snapshots public inputs: strided arithmetic operates on owned components,
+so that layout primarily tests ingestion of noncontiguous data.
+
+The `extreme` suite contains:
+
+- `cancellation_mass2`: clear cache and evaluate `(1e200, 1, 0, 1e200)`, whose
+  invariant is exactly -1 using rational products of the supplied binary floats.
+- `mixed_boost_0`, `mixed_boost_1`, `mixed_boost_100`: boost ordinary batches with
+  0, 1, or up to 100 exceptional entries `(1e308, 1, 0, 1e308)` by beta
+  `(-0.9, 0, 0)`. A 400-digit Decimal reference checks exceptional outputs.
+  Counts shrink and deduplicate for small batches.
+
+These adversarial numerical inputs exercise recovery paths; they are not a
+representative particle-energy distribution. Ordinary checks use independent
+NumPy/Awkward formulas for components and observables and verify the full visible
+list and option structure. RuntimeWarnings, failed checks, worker errors, and
+timeouts fail the command rather than producing a completed report.
+
+## Results
+
+### Dense-array scaling
+
+**Microseconds per call, median ± MAD.** Sizes count particles. Values are
+rounded for readability; full local reports retain samples and finer precision.
+
+| Case | 1,000 | 100,000 | 1,000,000 |
 | --- | ---: | ---: | ---: |
-| `construct` | 18.52 ± 0.10 | 178.85 ± 2.74 | 2,210.21 ± 60.28 |
-| `mass_cold` | 14.29 ± 0.11 | 305.33 ± 2.04 | 5,354.94 ± 309.07 |
-| `mass_hot` | 0.38 ± 0.00 | 0.38 ± 0.01 | 0.38 ± 0.00 |
-| `mass_uncached` | 13.89 ± 0.07 | 270.12 ± 20.05 | 4,993.91 ± 105.68 |
-| `properties` | 58.70 ± 0.30 | 5,348.00 ± 71.38 | 60,173.79 ± 1,229.42 |
-| `properties_intermediates` | 65.66 ± 1.01 | 5,556.74 ± 58.98 | 59,378.00 ± 551.67 |
-| `add` | 18.95 ± 0.08 | 186.34 ± 6.24 | 3,282.32 ± 77.66 |
-| `boost` | 84.31 ± 0.61 | 1,255.76 ± 28.82 | 17,745.60 ± 414.52 |
-| `rotate` | 42.69 ± 0.07 | 349.90 ± 5.03 | 7,099.26 ± 433.17 |
-| `sum` | 58.45 ± 0.42 | 878.39 ± 11.04 | 13,163.06 ± 1,659.17 |
-| `workflow` | 123.71 ± 0.52 | 1,882.35 ± 45.31 | 26,200.04 ± 580.46 |
+| `construct` | 18.7 ± 0.2 | 222 ± 19 | 2,973 ± 340 |
+| `mass_cold` | 14.4 ± 0.2 | 314 ± 10 | 6,103 ± 299 |
+| `mass_hot` | 0.384 ± 0.006 | 0.388 ± 0.004 | 0.384 ± 0.003 |
+| `mass_uncached` | 14.3 ± 0.3 | 318 ± 18 | 7,224 ± 1,143 |
+| `properties` | 59.7 ± 1.4 | 6,030 ± 291 | 62,780 ± 1,629 |
+| `properties_intermediates` | 66.1 ± 3.4 | 5,497 ± 133 | 62,744 ± 2,496 |
+| `add` | 19.4 ± 0.4 | 204 ± 13 | 3,867 ± 196 |
+| `boost` | 86.5 ± 2.4 | 1,452 ± 222 | 22,653 ± 3,847 |
+| `rotate` | 43.2 ± 0.8 | 370 ± 19 | 7,627 ± 438 |
+| `sum` | 60.9 ± 0.9 | 885 ± 13 | 14,941 ± 483 |
+| `workflow` | 131 ± 2 | 2,241 ± 277 | 26,762 ± 1,134 |
 
-Cached reads stay near 0.38 µs as the buffer grows; they reuse existing arrays.
-Fresh calculations and the workflow scale with input size. Intermediate caching
-had similar property-sequence times at one million particles while retaining
-more traced allocation, as the next table shows.
+Hot reads reuse a previously allocated array. Their nearly constant latency
+measures cache access rather than arithmetic throughput.
 
-Separate allocation observations for **one million NumPy particles**, in MiB:
+### Jagged and irregular layouts
 
-| Case | Retained traced MiB | Peak traced MiB |
+**Milliseconds per call, median ± MAD.** Sizes count events except for strided
+input, where they count particles. Each row is a distinct population and shape.
+
+| Layout | Size | Particles generated / visible | Cold mass ms | Boost ms | Sum ms | Workflow ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| jagged | 1,000 | 3973 / 3973 | 0.201 ± 0.001 | 0.562 ± 0.010 | 1.872 ± 0.013 | 1.353 ± 0.007 |
+| jagged | 100,000 | 401402 / 401402 | 3.110 ± 0.174 | 7.708 ± 0.361 | 10.769 ± 0.378 | 11.960 ± 0.215 |
+| strided | 100,000 | 100000 / 100000 | 0.309 ± 0.011 | 1.212 ± 0.011 | 0.884 ± 0.009 | 1.807 ± 0.021 |
+| missing | 10,000 | 39936 / 32395 | 2.566 ± 0.045 | 3.994 ± 0.021 | 10.066 ± 0.059 | 9.328 ± 0.080 |
+| deep | 10,000 | 39936 / 39936 | 0.389 ± 0.006 | 1.161 ± 0.025 | 3.555 ± 0.043 | 2.494 ± 0.064 |
+| heavy-tail | 10,000 | 13593 / 13593 | 0.242 ± 0.002 | 0.685 ± 0.008 | 2.279 ± 0.068 | 1.590 ± 0.046 |
+
+### Incremental allocations
+
+These are separate **single observations**, in MiB, for one million NumPy
+particles. Retained allocation includes the live return value and any new cache
+buffers. Peak traced allocation includes temporary traced storage.
+
+| Case | Retained MiB | Peak MiB |
 | --- | ---: | ---: |
 | `construct` | 30.52 | 30.52 |
 | `mass_cold` | 7.63 | 22.89 |
-| `mass_hot` | 0.00 | 0.00 |
 | `properties` | 30.52 | 55.32 |
 | `properties_intermediates` | 68.67 | 78.21 |
 | `workflow` | 7.63 | 91.56 |
 
-Hot-read allocation rounds to 0.00 MiB because the cached buffer predates tracing;
-it does not mean the collection or cache has zero memory footprint.
-
-Jagged scaling and irregular-layout checks below use **ms/call, median ± MAD**.
-Sizes count events except for strided input, where they count particles. Particle
-counts include both generated and visible entries. These layouts have different
-shapes and populations, so their rows are not equal-work backend comparisons.
-
-| Layout | Size | Particles generated / visible | Cold mass ms | Boost ms | Sum ms | Workflow ms |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| jagged | 1,000 | 3973 / 3973 | 1.134 ± 0.011 | 2.696 ± 0.012 | 2.441 ± 0.009 | 5.941 ± 0.019 |
-| jagged | 100,000 | 401402 / 401402 | 5.294 ± 0.135 | 26.170 ± 0.246 | 12.830 ± 0.542 | 44.867 ± 2.770 |
-| strided | 10,000 | 10000 / 10000 | 0.035 ± 0.000 | 0.166 ± 0.001 | 0.134 ± 0.000 | 0.242 ± 0.011 |
-| missing | 10,000 | 39936 / 32395 | 7.506 ± 0.117 | 12.469 ± 0.080 | 11.108 ± 0.070 | 27.890 ± 0.122 |
-| deep | 10,000 | 39936 / 39936 | 1.690 ± 0.011 | 6.341 ± 0.055 | 5.941 ± 0.023 | 12.975 ± 0.089 |
-| heavy-tail | 10,000 | 13593 / 13593 | 1.192 ± 0.010 | 3.450 ± 0.036 | 3.008 ± 0.058 | 7.336 ± 0.167 |
+Tracing excludes input storage, prior caches, interpreter baseline, and untraced
+native allocations. These values are **not RSS or total memory use**. A cached
+read can allocate very little during tracing while still retaining a large cache
+created beforehand. Intermediate retention increased allocated storage for the
+property sequence without a clear timing benefit in this run.
 
 ### Numerical recovery cost
 
-Times in **ms/call, median ± MAD**. Exceptional counts are fixed per batch,
-so the 100-entry case has a larger exceptional fraction in the smaller batch.
+**Milliseconds per call, median ± MAD.** Exceptional counts are fixed per batch,
+so 100 exceptional entries represent different fractions at the two sizes.
 
 | Case | 1,000 particles | 10,000 particles |
 | --- | ---: | ---: |
-| `cancellation_mass2` | 4.260 ± 0.018 | 42.281 ± 0.194 |
-| `mixed_boost_0` | 0.084 ± 0.001 | 0.165 ± 0.001 |
-| `mixed_boost_1` | 0.334 ± 0.002 | 0.499 ± 0.004 |
-| `mixed_boost_100` | 20.233 ± 0.039 | 20.373 ± 0.039 |
+| `cancellation_mass2` | 4.177 ± 0.018 | 43.774 ± 1.565 |
+| `mixed_boost_0` | 0.087 ± 0.002 | 0.179 ± 0.011 |
+| `mixed_boost_1` | 0.353 ± 0.018 | 0.608 ± 0.040 |
+| `mixed_boost_100` | 20.796 ± 0.486 | 21.922 ± 1.424 |
 
-One exceptional boost adds roughly 0.25–0.33 ms here; 100 add about 20 ms.
-Exact cancellation recovery also has a substantial per-entry cost. Every measured
-case passed its independent output check; this is the cost of successful recovery
-for these inputs, not a claim of universal exact rounding.
+The checks passed for every measured batch. Recovery has a substantial cost when
+many entries need it; these timings describe successful recovery for the stated
+inputs, not a guarantee of correct rounding for every possible calculation.
 
-### Context from `vector`
+## Secondary vector comparison
 
-This smaller comparison uses 100,000 NumPy particles or 100,000 jagged events
-(401,402 particles), with **ms/call, median ± MAD**. Values come from a separate
-matched run, so they need not exactly match the core table above.
+This separate matched run uses **100,000 NumPy particles** or **100,000 jagged
+events containing 401,402 particles**. Values are **milliseconds per call,
+median ± MAD**. Both implementations receive the same input components and use
+the same boost convention. Construction plus mass uses a new object each call;
+recalculation uses existing objects with LVec storage disabled.
 
-| Layout | Workload | LVec ms | `vector` ms |
+| Layout | Workload | LVec ms | vector ms |
 | --- | --- | ---: | ---: |
-| numpy | Construct + mass | 0.488 ± 0.016 | 0.797 ± 0.026 |
-| numpy | Recalculate mass | 0.291 ± 0.005 | 0.420 ± 0.005 |
-| numpy | Add + boost + mass | 1.881 ± 0.041 | 2.844 ± 0.057 |
-| jagged | Construct + mass | 17.305 ± 0.906 | 3.632 ± 0.079 |
-| jagged | Recalculate mass | 4.728 ± 0.079 | 3.784 ± 0.099 |
-| jagged | Add + boost + mass | 44.489 ± 0.840 | 12.218 ± 0.817 |
+| numpy | Construct + mass | 0.494 ± 0.011 | 0.823 ± 0.036 |
+| numpy | Recalculate mass | 0.302 ± 0.019 | 0.428 ± 0.011 |
+| numpy | Add + boost + mass | 1.963 ± 0.087 | 2.823 ± 0.078 |
+| jagged | Construct + mass | 4.002 ± 0.371 | 4.128 ± 0.591 |
+| jagged | Recalculate mass | 2.497 ± 0.240 | 3.170 ± 0.107 |
+| jagged | Add + boost + mass | 11.749 ± 0.671 | 12.305 ± 0.248 |
 
-LVec had lower NumPy timings in this sample; `vector` had lower jagged timings,
-particularly for construction plus mass and the complete workflow. Ownership,
-layout, validation, caching, and numerical policies differ, so these results
-support workload-specific decisions rather than a general package ranking.
+The NumPy rows had lower LVec medians in this sample. Jagged construction plus
+mass and the complete workflow were close; small differences are comparable to
+observed dispersion. Recalculated jagged mass had a lower LVec median. These
+observations do not support an aggregate package ranking.
+
+Construction reflects each public API and representation: LVec owns read-only
+component snapshots, while the comparison uses `vector.array` for NumPy and
+`vector.zip` for Awkward. Copying and ownership costs are not normalized. No hot
+LVec cache read is compared with `vector` arithmetic. Numerical stress cases are
+excluded because the packages have different numerical-recovery policies.
+The adapters follow the documented [NumPy constructor](https://vector.readthedocs.io/en/stable/src/make_numpy.html),
+[Awkward constructor](https://vector.readthedocs.io/en/stable/src/make_awkward.html),
+and [`boost_beta3`](https://vector.readthedocs.io/en/stable/src/vector4d.html) APIs.
+
+## Interpretation and validation
+
+- Compare matching case names, shapes, cache settings, source revisions, and
+  dependency versions. Filtering does not change seeded inputs, but can change
+  measurement order and allocation history. Use the same selections across
+  revisions; the separate comparison run need not match the core timings exactly.
+- Pooled samples can be correlated within each process; median/MAD values are descriptive.
+  No confidence interval, statistical significance test, or portable speedup
+  guarantee is claimed. Allocation measurements are not repeated timing samples.
+- This is a synthetic CPU suite on one workstation. It does not measure I/O,
+  ROOT ingestion, GPUs, application-scale analyses, or general physics accuracy.
+  Physics regressions are checked separately with independent oracles.
+- The integrated validation passed **474 tests each** on Python 3.13.12 with
+  current dependencies, Python 3.13.12 with NumPy 2.2.4/Awkward 2.7.4, and Python
+  3.15.2 with current dependencies. NumPy-only validation passed **232 tests**
+  and skipped 214 optional checks. RuntimeWarnings were treated as errors.
+- Framework checks run through the normal pytest configuration. Timing thresholds
+  are not CI gates. Run `python -m pytest benchmarks/tests -W error::RuntimeWarning`
+  to check the harness separately.
+
+### Revision comparisons and research records
+
+Use one framework and interpreter for both checkouts:
+
+```bash
+python -m benchmarks --source /path/to/baseline --layouts numpy jagged --sizes 100000 --output /tmp/before.md
+python -m benchmarks --source /path/to/candidate --layouts numpy jagged --sizes 100000 --output /tmp/after.md
+```
+
+The source checkouts must support the selected LVec APIs. The runner verifies
+which source was imported and detects source/environment changes between
+workers. Use a quiet machine, consistent power settings, and repeated alternating
+runs when a difference is small. Record CPU model, memory, OS, interpreter,
+dependency versions, source/framework fingerprints, and complete commands.
+
+The source tree stores code, tests, and this curated summary. Generated reports
+belong under ignored `benchmarks/results/` or outside the checkout; generated
+plots and JSON/JSONL/CSV under `benchmarks/` are also ignored. The CLI writes
+Markdown and uses JSON only for in-memory worker communication. No external
+samples or downloads are needed for benchmark execution.
+
+For publication, retain the full Markdown reports (including raw samples) and
+an environment export with the analysis or supplementary materials. A versioned
+summary alone does not contain the raw data needed for reanalysis. See the
+[root citation guidance](../README.md#citation) for software attribution.
