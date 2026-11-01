@@ -20,7 +20,8 @@ class LVec:
         _cache: Property caching system for optimized property calculations
     """
     
-    def __init__(self, px, py, pz, E, max_cache_size=None, default_ttl=None, *, validate=False):
+    def __init__(self, px, py, pz, E, max_cache_size=None, default_ttl=None, *,
+                 validate=False, cache_intermediates=False, cache_stats=True):
         """
         Initialize Lorentz vector from components.
         
@@ -30,6 +31,8 @@ class LVec:
             max_cache_size: Maximum number of entries in the cache (None for unlimited)
             default_ttl: Default time-to-live for cached values in seconds (None for no expiration)
             validate: Opt in to physical-particle validation (default False)
+            cache_intermediates: Retain squared-component arrays for reuse (default False)
+            cache_stats: Record cache hit/miss counters (default True)
         
         Raises:
             ShapeError: If input arrays have inconsistent shapes
@@ -48,7 +51,9 @@ class LVec:
             raise BackendError("initialization", self._lib, str(e))
             
         # Initialize the enhanced caching system with memory optimization features
-        self._cache = PropertyCache(max_size=max_cache_size, default_ttl=default_ttl)
+        self._cache = PropertyCache(max_size=max_cache_size, default_ttl=default_ttl,
+                                    cache_intermediates=cache_intermediates,
+                                    instrumentation=cache_stats)
         
         # Register property dependencies
         self._cache.register_dependency('pt', ['px', 'py'])
@@ -58,12 +63,13 @@ class LVec:
         self._cache.register_dependency('phi', ['px', 'py'])
         self._cache.register_dependency('eta', ['px', 'py', 'pz'])
         
-        # Register intermediate calculation dependencies
-        self._cache.register_dependency('px_squared', ['px'])
-        self._cache.register_dependency('py_squared', ['py'])
-        self._cache.register_dependency('pz_squared', ['pz'])
-        self._cache.register_dependency('p_squared', ['px', 'py', 'pz'])
-        self._cache.register_dependency('pt_squared', ['px', 'py'])
+        # Only retained intermediates need dependency bookkeeping.
+        if cache_intermediates:
+            self._cache.register_dependency('px_squared', ['px'])
+            self._cache.register_dependency('py_squared', ['py'])
+            self._cache.register_dependency('pz_squared', ['pz'])
+            self._cache.register_dependency('p_squared', ['px', 'py', 'pz'])
+            self._cache.register_dependency('pt_squared', ['px', 'py'])
         
         if validate:
             self.validate_particle()
@@ -96,12 +102,16 @@ class LVec:
         return self
 
     @classmethod
-    def from_p4(cls, px, py, pz, E, max_cache_size=None, default_ttl=None, *, validate=False):
+    def from_p4(cls, px, py, pz, E, max_cache_size=None, default_ttl=None, *,
+                 validate=False, cache_intermediates=False, cache_stats=True):
         """Create from Cartesian components."""
-        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl, validate=validate)
+        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl,
+                   validate=validate, cache_intermediates=cache_intermediates,
+                   cache_stats=cache_stats)
     
     @classmethod
-    def from_ptepm(cls, pt, eta, phi, m, max_cache_size=None, default_ttl=None, *, validate=False):
+    def from_ptepm(cls, pt, eta, phi, m, max_cache_size=None, default_ttl=None, *,
+                 validate=False, cache_intermediates=False, cache_stats=True):
         """Create from pt, eta, phi, mass."""
         # First convert to arrays and get the lib type
         pt, eta, phi, m, lib = ensure_array(*(float(x) if isinstance(x, np.number) else x for x in (pt, eta, phi, m)))
@@ -109,7 +119,9 @@ class LVec:
         if validate and backend_any((pt < 0) | (m < 0)):
             raise InputError("pt or mass", "negative", "Particle pt and mass must be non-negative")
         px, py, pz, E = compute_p4_from_ptepm(pt, eta, phi, m, lib)
-        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl, validate=validate)
+        return cls(px, py, pz, E, max_cache_size=max_cache_size, default_ttl=default_ttl,
+                   validate=validate, cache_intermediates=cache_intermediates,
+                   cache_stats=cache_stats)
     
     @classmethod
     def from_ary(cls, ary_dict):
