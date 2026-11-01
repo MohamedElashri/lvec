@@ -1,6 +1,7 @@
 # vectors.py
+import numpy as np
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
-                        backend_sin, backend_cos, backend_atan2)
+                        backend_sin, backend_cos, backend_atan2, own_components, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_pt, compute_p)
 from .exceptions import ShapeError, InputError, BackendError
 from .caching import PropertyCache
@@ -14,25 +15,29 @@ class Vec2D:
         _cache: Property caching system for optimized property calculations
     """
     
-    def __init__(self, x, y):
+    def __init__(self, x, y, *, cache_intermediates=False, cache_stats=True):
+        self._lib = 'unknown'
         try:
-            self._x, self._y, self._lib = ensure_array(x, y)
+            self._x, self._y, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y)))
             check_shapes(self._x, self._y, self._lib)
+            self._x, self._y = own_components(self._x, self._y)
         except Exception as e:
             if isinstance(e, ShapeError):
                 raise
             raise BackendError("initialization", self._lib, str(e))
             
         # Initialize the enhanced caching system
-        self._cache = PropertyCache()
+        self._cache = PropertyCache(cache_intermediates=cache_intermediates,
+                                    instrumentation=cache_stats)
         
         # Register property dependencies
         self._cache.register_dependency('r', ['x', 'y'])
         self._cache.register_dependency('phi', ['x', 'y'])
         
-        # Register intermediate calculation dependencies
-        self._cache.register_dependency('x_squared', ['x'])
-        self._cache.register_dependency('y_squared', ['y'])
+        # Only retained intermediates need dependency bookkeeping.
+        if cache_intermediates:
+            self._cache.register_dependency('x_squared', ['x'])
+            self._cache.register_dependency('y_squared', ['y'])
         
     def clear_cache(self):
         """Clear the computed property cache."""
@@ -160,17 +165,20 @@ class Vec3D:
         _cache: Property caching system for optimized property calculations
     """
     
-    def __init__(self, x, y, z):
+    def __init__(self, x, y, z, *, cache_intermediates=False, cache_stats=True):
+        self._lib = 'unknown'
         try:
-            self._x, self._y, self._z, self._lib = ensure_array(x, y, z)
+            self._x, self._y, self._z, self._lib = ensure_array(*(normalize_scalar(v) for v in (x, y, z)))
             check_shapes(self._x, self._y, self._z, self._lib)
+            self._x, self._y, self._z = own_components(self._x, self._y, self._z)
         except Exception as e:
             if isinstance(e, ShapeError):
                 raise
             raise BackendError("initialization", self._lib, str(e))
             
         # Initialize the enhanced caching system
-        self._cache = PropertyCache()
+        self._cache = PropertyCache(cache_intermediates=cache_intermediates,
+                                    instrumentation=cache_stats)
         
         # Register property dependencies
         self._cache.register_dependency('r', ['x', 'y', 'z'])
@@ -178,11 +186,12 @@ class Vec3D:
         self._cache.register_dependency('phi', ['x', 'y'])
         self._cache.register_dependency('theta', ['x', 'y', 'z'])
         
-        # Register intermediate calculation dependencies
-        self._cache.register_dependency('x_squared', ['x'])
-        self._cache.register_dependency('y_squared', ['y'])
-        self._cache.register_dependency('z_squared', ['z'])
-        self._cache.register_dependency('xy_squared', ['x', 'y'])  # x² + y²
+        # Only retained intermediates need dependency bookkeeping.
+        if cache_intermediates:
+            self._cache.register_dependency('x_squared', ['x'])
+            self._cache.register_dependency('y_squared', ['y'])
+            self._cache.register_dependency('z_squared', ['z'])
+            self._cache.register_dependency('xy_squared', ['x', 'y'])  # x² + y²
             
     def clear_cache(self):
         """Clear the computed property cache."""

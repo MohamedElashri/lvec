@@ -16,14 +16,15 @@
 LVec is a Python package designed for High Energy Physics (HEP) analysis, providing a unified interface for handling Lorentz vectors. It bridges the gap between different HEP ecosystems (Scikit-HEP and ROOT) and supports both NumPy and Awkward array backends.
 
 ### Dependencies
-- Python 3.10+ (due to numpy requirement)
-- NumPy (required)
-- Awkward Array (optional, for Awkward array support)
+- Python 3.10+
+- NumPy >=2.2.4 (required)
+- Awkward Array >=2.7.4 (optional, install `lvec[awkward]`)
 
 ## Installation
 
 ```bash
 pip install lvec
+pip install "lvec[awkward]"  # optional jagged arrays
 ```
 
 For development installation:
@@ -129,7 +130,7 @@ def from_p4(cls, px, py, pz, E):
 ```
 ## Properties
 
-All properties are cached for performance optimization. The cache is automatically invalidated when the vector is modified.
+Derived properties are cached on first access. Components are owned read-only snapshots, and cached numeric arrays are read-only. Create a new vector for changed components; after low-level changes to private component attributes, call `touch()` explicitly.
 
 ### Kinematic Properties
 
@@ -164,7 +165,7 @@ def eta(self):
     Notes
     -----
     - Cached property
-    - Undefined for pt = 0 (returns ±inf)
+    - Beam-axis vectors return signed infinity; the zero spatial vector returns zero
     - Independent of energy/mass
     """
 
@@ -192,12 +193,12 @@ def mass(self):
     Returns
     -------
     array_like
-        m = sqrt(E² - p²)
+        m = sign(E² - p²) * sqrt(abs(E² - p²))
         
     Notes
     -----
-    - Returns real part only if E² < p²
-    - For virtual particles, can be imaginary
+    - Spacelike vectors have negative signed mass
+    - mass2 exposes the raw signed E² - p² without clipping
     - Cached property
     """
 
@@ -416,7 +417,7 @@ def boost(self, bx, by, bz):
     ----------
     bx, by, bz : float, array_like
         Boost velocity components (β) in units of c
-        Each component should be in range [-1, 1]
+        Components must be finite with total |β| < 1
 
     Returns
     -------
@@ -427,7 +428,7 @@ def boost(self, bx, by, bz):
     -----
     - Preserves invariant mass
     - γ = 1/sqrt(1 - β²)
-    - For numerical stability, treats very small boosts as zero
+    - Uses γ²/(γ+1) for a stable small-velocity limit
 
     Examples
     --------
@@ -443,7 +444,7 @@ def boostz(self, bz):
     ----------
     bz : float, array_like
         Boost velocity (β) along z-axis in units of c
-        Should be in range [-1, 1]
+        Must be finite with abs(β) < 1
 
     Returns
     -------
@@ -452,7 +453,7 @@ def boostz(self, bz):
 
     Notes
     -----
-    - Specialized, faster version of general boost
+    - Convenience wrapper for the general boost
     - Useful for collider physics where boost is often along beam axis
     """
 ```
@@ -745,7 +746,7 @@ The caching system tracks:
 - Access order for LRU eviction
 - Hit/miss statistics per property
 
-Cache invalidation happens automatically when vector components are modified, ensuring calculations always use correct values.
+Components are immutable snapshots; `touch()` is available for explicitly clearing derived values after unsupported low-level changes.
 
 ### Working with Batch Data
 
@@ -808,29 +809,47 @@ with uproot.recreate("output.root") as f:
 
 ## Performance Considerations
 
-1. **Caching Strategy**
-   - Derived properties are cached on first access
-   - Cache is invalidated only when necessary
-   - Version control prevents stale cache usage
+Derived properties are cached on first access. By default, intermediate squared
+component arrays are temporary rather than retained, so computing only `mass`
+keeps one result array in the cache. For workloads repeatedly combining several
+properties, `cache_intermediates=True` opts into retaining shared intermediates.
+The same keyword is available on `Vector2D` and `Vector3D` constructors.
+Components are copied into read-only snapshots at construction, trading an
+upfront copy for reliable cached values when input arrays are later modified.
 
-2. **Memory Management**
-   - Large arrays are handled efficiently
-   - Backend operations avoid unnecessary copies
-   - Lazy evaluation where possible
+```python
+vectors = LVec(px, py, pz, E, cache_intermediates=False, cache_stats=False)
+masses = vectors.mass  # First calculation; later reads reuse the result.
+print(vectors.cache_stats["overall"]["retained_bytes"])
 
-3. **Optimization Tips**
-   ```python
-   # Efficient for large datasets
-   vectors = LVec(px, py, pz, E)
-   masses = vectors.mass  # Cached after first calculation
-   
-   # Avoid repeated calculations
-   pt = vectors.pt  # Store if used multiple times
-   
-   # Efficient filtering
-   mask = (vectors.pt > 20) & (np.abs(vectors.eta) < 2.5)
-   selected = vectors[mask]
-   ```
+# No retained derived arrays (each property access computes again):
+uncached = LVec(px, py, pz, E, max_cache_size=0)
+```
+
+`max_cache_size` limits the number of cached arrays, not their total bytes.
+Bounded caches use LRU eviction; unlimited caches avoid LRU bookkeeping.
+`cache_stats=False` disables hit/miss counting, while `cache_stats` still reports
+cache size and retained bytes. TTLs use a monotonic clock. `set_ttl` works before
+first access and its policy persists after expiration, eviction, and `touch()`;
+`set_ttl(name, None)` explicitly disables expiration for that property.
+
+Awkward shape checks compare list counts at every nesting level and missing-value
+positions with array operations. Matching regular and variable-list layouts are
+accepted; incompatible shapes and masks raise `ShapeError`. Validation does not
+index individual events in Python.
+
+Run the lightweight benchmark with the environment you intend to use:
+
+```bash
+PYTHONPATH=. python benchmarks/benchmark_core.py --sizes 1000 1000000 --jagged-events 10000
+```
+
+It prints JSON containing versions, seeded workload parameters, median timings
+for construction, uncached calculation, cached reads, and a complete analysis
+workflow. Memory measurements run separately and distinguish retained cache
+buffers from peak traced allocations. Input data and vector construction are
+excluded from the property-memory measurement. Compare the same workload and
+environment across branches; cached reads do not measure arithmetic throughput.
 
 ## Reference Frames
 
@@ -873,7 +892,11 @@ LVec provides two methods for transforming vectors between reference frames:
    p_moving = p_lab.transform_frame(lab_frame, moving_frame)
    ```
 
-The key difference is that `to_frame` assumes the vector is in some unspecified frame and applies a direct boost using the negative of the target frame's velocity, while `transform_frame` explicitly specifies both the source and target frames.
+`Frame` stores its physical velocity relative to the lab. `Frame.from_lvec(v)`
+uses +p/E and rejects systems with no finite timelike rest frame. `to_frame`
+assumes lab coordinates and applies -beta_target; `transform_frame` applies
++beta_source followed by -beta_target. `boost` itself is active. These corrected
+sign conventions make both transformation methods agree.
 
 ### Physics Validation
 
@@ -890,7 +913,42 @@ In the center-of-mass frame, the total momentum should be zero:
 
 ```python
 # Get total momentum in CM frame
-total_p_cm = sum(p.to_frame(cm_frame) for p in particles)
+total_p_cm = particles[0].to_frame(cm_frame)
+for p in particles[1:]:
+    total_p_cm = total_p_cm + p.to_frame(cm_frame)
 print(f"Total momentum in CM: ({total_p_cm.px}, {total_p_cm.py}, {total_p_cm.pz})")
 # Should be very close to (0, 0, 0)
 ```
+
+## Particle validation and numerical conventions
+
+Use consistent energy/momentum units and c=1. The metric is (+, -, -, -).
+General four-vectors allow negative energy and spacelike momenta. Pass
+`validate=True` to `LVec`, `from_p4`, or `from_ptepm` for physical particles,
+or call `validate_particle(rtol=1e-12, atol=0)` afterward. `is_physical` returns
+the corresponding mask: finite components, nonnegative energy, and signed
+mass squared no smaller than `-(atol + rtol * max(E², |p|²))`. `atol` is measured
+in energy squared. Missing entries are preserved and skipped by the aggregate
+validator. Neither `mass2` nor signed `mass` clips numerical results.
+
+`eta` uses asinh(pz/pt) to avoid cancellation near the beam. `eta=0` for the
+zero spatial vector, and eta is signed infinity for nonzero beam-axis vectors.
+
+### Component ownership
+
+Construction snapshots NumPy and Awkward component arrays and marks their
+NumPy buffers read-only. Changing caller-owned inputs cannot change a vector
+or leave its cached observables stale. Public component arrays reject ordinary
+in-place edits; create a new vector for changed components. This adds a copy at
+construction. Deliberate manipulation of private buffers, Awkward `.layout` replacement,
+or forcibly changing writeability is outside the supported API.
+
+Components are promoted to float64 before physics arithmetic, including integer
+and float32 arrays. This avoids integer overflow in squared momenta and provides
+the same precision policy for scalar, NumPy, and Awkward inputs. Complex-valued
+components are not supported.
+
+Internal NumPy arithmetic reuses freshly allocated results and existing owned
+read-only components instead of snapshotting them again. Public constructors
+continue to snapshot external inputs; this private optimization does not expose
+a borrowed mutable-input mode.

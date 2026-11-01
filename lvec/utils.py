@@ -79,84 +79,54 @@ def ensure_array(*args):
     
 
 def check_shapes(*arrays):
-    """
-    Verify all arrays have consistent shapes.
-    
-    Parameters
-    ----------
-    *arrays : array-like or scalar
-        Arrays to check, with the last element being the library type
+    """Require equal shapes and missing-value positions at every nesting depth.
+
+    The last argument names the backend. Awkward validation uses array kernels
+    over per-axis counts and masks, never a Python loop over events or leaves.
+    Scalar broadcasting is the responsibility of ``ensure_array``.
     """
     lib = arrays[-1]
     arrays = arrays[:-1]
-    
-    # Get shape information for error reporting
-    shape_info = []
-    for i, arr in enumerate(arrays):
-        if isinstance(arr, (float, int)):
-            shape_info.append(f"arrays[{i}]: scalar")
-        elif arr is None:
-            shape_info.append(f"arrays[{i}]: None")
-        else:
-            shape = getattr(arr, 'shape', None) or len(arr)
-            shape_info.append(f"arrays[{i}]: {shape}")
-    
-    # If all inputs are scalars, they're compatible
-    if all(isinstance(arr, (float, int)) or arr is None for arr in arrays):
+    if len(arrays) < 2:
         return
-        
-    if lib == 'ak':
-        # First check outer lengths
-        array_lengths = [len(arr) if not isinstance(arr, (float, int)) and arr is not None else 1 
-                        for arr in arrays]
-        if not all(l == array_lengths[0] for l in array_lengths):
-            raise ShapeError(
-                "Inconsistent array lengths in Awkward arrays",
-                shapes=shape_info
-            )
-        
-        # Filter out scalars and None values
-        valid_arrays = [arr for arr in arrays if not isinstance(arr, (float, int)) and arr is not None]
-        
-        if valid_arrays and all(is_ak(arr) for arr in valid_arrays):
-            import awkward as ak
-            
-            # Check if arrays are jagged by examining their structure
-            is_jagged = False
-            for arr in valid_arrays:
-                if any(isinstance(arr[i], ak.Array) and len(arr[i]) > 0 for i in range(len(arr))):
-                    is_jagged = True
-                    break
-            
-            # For jagged arrays, we need to verify that the inner dimensions are consistent
-            if is_jagged:
-                # For each outer index
-                for i in range(len(valid_arrays[0])):
-                    lengths = []
-                    
-                    # Get the length of each array at this index
-                    for arr in valid_arrays:
-                        try:
-                            if isinstance(arr[i], ak.Array) or hasattr(arr[i], '__len__'):
-                                lengths.append(len(arr[i]))
-                        except (TypeError, IndexError):
-                            # If we can't get a length, this array might be scalar at this position
-                            lengths.append(1)
-                    
-                    # If there are differing lengths at this index, raise an error
-                    if len(set(lengths)) > 1:  # Use set to find unique values
-                        raise ShapeError(
-                            f"Inconsistent inner dimensions in jagged Awkward arrays at index {i}",
-                            shapes=[f"Found lengths: {lengths}"]
-                        )
-    else:
-        array_shapes = [arr.shape if hasattr(arr, 'shape') and arr is not None else ()
-                       for arr in arrays]
-        if not all(s == array_shapes[0] for s in array_shapes):
-            raise ShapeError(
-                "Inconsistent array shapes in NumPy arrays",
-                shapes=shape_info
-            )
+
+    if lib != 'ak':
+        if any(getattr(getattr(arr, 'dtype', None), 'kind', '') in ('O', 'U', 'S', 'V')
+               for arr in arrays):
+            raise TypeError('Vector components must be numeric arrays')
+        shapes = [getattr(arr, 'shape', ()) for arr in arrays]
+        if any(shape != shapes[0] for shape in shapes[1:]):
+            raise ShapeError("Inconsistent array shapes in NumPy arrays",
+                             shapes=[f"arrays[{i}]: {shape}" for i, shape in enumerate(shapes)])
+        return
+
+    import awkward as ak
+    shape_info = [f"arrays[{i}]: length {len(arr)}, depth {arr.ndim}"
+                  for i, arr in enumerate(arrays)]
+    reference = arrays[0]
+    if any(len(arr) != len(reference) for arr in arrays[1:]):
+        raise ShapeError("Inconsistent array lengths in Awkward arrays", shapes=shape_info)
+    if any(arr.ndim != reference.ndim for arr in arrays[1:]):
+        raise ShapeError("Inconsistent nesting depths in Awkward arrays", shapes=shape_info)
+
+    def equal_structure(left, right):
+        return ak.almost_equal(left, right, rtol=0, atol=0,
+                               check_parameters=False, check_regular=False)
+
+    # Each count array includes the full parent structure, including parent
+    # missing values. The final mask covers missing numeric leaves as well.
+    try:
+        for axis in range(1, reference.ndim):
+            counts = ak.num(reference, axis=axis)
+            if any(not equal_structure(counts, ak.num(arr, axis=axis)) for arr in arrays[1:]):
+                raise ShapeError(f"Inconsistent inner dimensions in Awkward arrays at axis {axis}",
+                                 shapes=shape_info)
+        mask = ak.is_none(reference, axis=-1)
+        if any(not equal_structure(mask, ak.is_none(arr, axis=-1)) for arr in arrays[1:]):
+            raise ShapeError("Inconsistent missing-value positions in Awkward arrays", shapes=shape_info)
+    except (ValueError, TypeError, IndexError) as exc:
+        raise ShapeError("Incompatible nesting structure in Awkward arrays", shapes=shape_info) from exc
+
 
 def compute_pt(px, py, lib):
     """
@@ -208,70 +178,9 @@ def compute_p(px, py, pz, lib):
 
 
 def compute_mass(E, p, lib):
-    """
-    Compute mass from energy and momentum.
-    
-    For physical particles, m² = E² - p² should be positive. When negative values
-    are encountered due to numerical inaccuracies, a warning is issued and the
-    absolute value is used.
-    
-    Parameters
-    ----------
-    E : scalar or array-like
-        Energy
-    p : scalar or array-like
-        Momentum
-    lib : str
-        Backend library ('np' or 'ak')
-        
-    Returns
-    -------
-    scalar or array-like
-        Mass with the same type as input
-    """
-    import warnings
+    """Return signed sqrt(E²-p²), including spacelike four-vectors."""
     m2 = E*E - p*p
-    
-    # Check for negative m² values
-    if isinstance(m2, (float, int)):
-        if m2 < 0:
-            warnings.warn(f"Negative m² value encountered: {m2}. Taking absolute value, but this may indicate unphysical particles or numerical issues.")
-            m2 = abs(m2)
-    else:
-        # For array inputs, check if any values are negative
-        has_negative = False
-        
-        if lib == 'ak' and HAS_AWKWARD:
-            # For Awkward arrays
-            try:
-                import awkward as ak
-                # Use ak.any for Awkward arrays
-                has_negative = ak.any(m2 < 0)
-            except Exception:
-                # Fallback if ak.any doesn't work
-                has_negative = any(m2 < 0)
-        else:
-            # For NumPy arrays
-            if hasattr(m2, 'any'):
-                has_negative = (m2 < 0).any()
-            else:
-                # For other iterable types
-                try:
-                    has_negative = any(m2 < 0)
-                except TypeError:
-                    # Not iterable
-                    has_negative = False
-            
-        if has_negative:
-            warnings.warn("Negative m² values encountered. Taking absolute values, but this may indicate unphysical particles or numerical issues.")
-            m2 = backend_where(m2 < 0, abs(m2), m2, lib)
-    
-    m = backend_sqrt(m2, lib)
-    
-    # Convert to scalar only if all inputs were scalars
-    if isinstance(E, (float, int)) and isinstance(p, (float, int)):
-        return float(m)
-    return m
+    return np.sign(m2) * np.sqrt(abs(m2))
 
 
 def compute_eta(p, pz, lib):

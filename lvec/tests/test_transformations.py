@@ -2,7 +2,7 @@ import pytest
 
 from lvec import LVec, ShapeError
 import numpy as np
-import awkward as ak
+ak = pytest.importorskip("awkward")
 
 def test_transformations():
     # Test rotations
