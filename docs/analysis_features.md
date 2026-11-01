@@ -113,3 +113,18 @@ This convention is used in the
 [Belle II helicity-angle definition](https://software.belle2.org/release-05-01-25/doxygen/classBelle2_1_1Particle.html).
 For comparison of rapidity and eta separation conventions, see the
 [Scikit-HEP Vector interface](https://vector.readthedocs.io/en/stable/src/vector4d.html).
+
+## Accuracy and cache policy
+
+Components are owned read-only float64 snapshots. Construct a new vector to
+change component values. Derived observables are cached by default, with
+intermediate retention controlled separately; see the
+[API and cache guide](README.md#cache-policies).
+
+Severe invariant cancellation, exceptional boosts/rotations, and affected event
+sums receive selective numerical recovery. This does not restore input rounding
+or make ill-conditioned transforms exactly reversible. The
+[accuracy guide](numerical_accuracy.md) records the detection cost, independent
+precision oracles, and commands for reproducing the stress and scaling checks.
+Review the [migration guide](migration.md) when updating analyses that depended
+on earlier mass, frame-sign, broadcasting, or mutation behavior.
