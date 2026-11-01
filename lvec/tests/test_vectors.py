@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-import awkward as ak
+ak = pytest.importorskip("awkward")
 from lvec.vectors import Vec2D, Vec3D
 from lvec.exceptions import ShapeError, InputError, BackendError
 
