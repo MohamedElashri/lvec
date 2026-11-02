@@ -227,25 +227,23 @@ def test_scalar_boost_leaves_match_decimal_across_layouts(ak, kind, beta):
                                    rtol=3e-14, atol=5e-324)
 
 
-def test_scalar_boost_parameters_are_views_and_recovery_remains_selective(ak, monkeypatch):
+def test_scalar_boost_parameters_stay_scalar_and_recovery_remains_selective(ak, monkeypatch):
     from lvec import _adaptive
-    original = _adaptive._boost_numpy
+    original = _adaptive._constant_beta_numpy
     original_recover = _adaptive._boost_decimal
     recoveries = []
     calls = []
 
-    def checked(*args):
-        for parameter in args[4:]:
-            assert parameter.shape == args[0].shape
-            assert all(stride == 0 for stride in parameter.strides)
+    def checked(values,beta,gamma):
+        assert all(np.isscalar(parameter) for parameter in (*beta,gamma))
         calls.append(None)
-        return original(*args)
+        return original(values,beta,gamma)
 
     def recover(row):
         recoveries.append(None)
         return original_recover(row)
 
-    monkeypatch.setattr(_adaptive, '_boost_numpy', checked)
+    monkeypatch.setattr(_adaptive, '_constant_beta_numpy', checked)
     monkeypatch.setattr(_adaptive, '_boost_decimal', recover)
     x = ak.Array([[1., None], [], None, [1e308]])
     v = LVec(x, 0., 0., ak.Array([[5., None], [], None, [1e308]]))

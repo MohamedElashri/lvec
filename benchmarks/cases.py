@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from fractions import Fraction
 from typing import Callable
+from itertools import cycle
 
 import numpy as np
 
@@ -102,6 +103,26 @@ def boost_reference(data, beta=BETA):
             pz + scale * beta[2], gamma * (energy + bp))
 
 
+def rotation_reference(data, angle, axis=None):
+    x,y,z,t=data
+    if axis is None:
+        # ROOT zxz: Rz(-psi) Rx(-theta) Rz(-phi), independently expanded.
+        c,s=np.cos(angle),np.sin(angle)
+        x,y=c*x+s*y,-s*x+c*y
+        c,s=np.cos(EULER[1]),np.sin(EULER[1])
+        y,z=c*y+s*z,-s*y+c*z
+        c,s=np.cos(EULER[2]),np.sin(EULER[2])
+        return c*x+s*y,-s*x+c*y,z,t
+    a,b,c=axis
+    norm=np.sqrt(a*a+b*b+c*c)
+    a,b,c=a/norm,b/norm,c/norm
+    dot=a*x+b*y+c*z
+    cosine,sine=np.cos(angle),np.sin(angle)
+    return (cosine*x+sine*(b*z-c*y)+(1-cosine)*dot*a,
+            cosine*y+sine*(c*x-a*z)+(1-cosine)*dot*b,
+            cosine*z+sine*(a*y-b*x)+(1-cosine)*dot*c,t)
+
+
 @dataclass
 class CaseSpec:
     name: str
@@ -114,6 +135,22 @@ def core_cases(layout, size, seed, compare_vector=False):
 
     def mass_reference():
         return np.sqrt(energy * energy - (px * px + py * py + pz * pz))
+
+    def parameter_rotation(name, collection, make_axis, check):
+        operation_name=name.removeprefix('vector.')
+        arbitrary=operation_name.startswith('rotate_axis')
+        varying=operation_name.endswith('_varying')
+        axis=(1.,1.,1.) if varying else (px+2.,py+3.,pz+4.)
+        direction=make_axis(*axis) if arbitrary else None
+        particle_angles=None if varying else .2+.01*px
+        angles=cycle(tuple(.2+.001*i for i in range(257)))
+        last=[None]
+        def operation():
+            angle=next(angles) if varying else particle_angles
+            last[0]=angle
+            return (collection.rotate_axis(direction,angle) if arbitrary else
+                    collection.rotate_euler(angle,EULER[1],EULER[2]))
+        return Case(name,operation,lambda r:check(r,rotation_reference(data,last[0],axis if arbitrary else None)))
 
     def prepare(name):
         # A specification holds shared input only. Allocate the current case's
@@ -144,6 +181,13 @@ def core_cases(layout, size, seed, compare_vector=False):
             def check_vector(r,expected):
                 for value,wanted in zip((r.x,r.y,r.z,r.t),expected):
                     assert_values(value,wanted)
+            if name in {'vector.rotate_euler_array','vector.rotate_axis_array',
+                        'vector.rotate_euler_varying','vector.rotate_axis_varying'}:
+                def make_axis(x,y,z):
+                    return (vector.array(dict(x=x,y=y,z=z)) if layout=='numpy' and not np.isscalar(x)
+                            else vector.obj(x=x,y=y,z=z) if np.isscalar(x)
+                            else vector.zip(dict(x=x,y=y,z=z)))
+                return parameter_rotation(name,other,make_axis,check_vector)
             if name == 'vector.unit_cold':
                 return Case(name,lambda:other.unit(),lambda r:check_vector(r,tuple(c/2 for c in data)))
             if name == 'vector.rotate_axis':
@@ -156,15 +200,26 @@ def core_cases(layout, size, seed, compare_vector=False):
             if name == 'vector.boost_gamma':
                 return Case(name,lambda:other.boostX(gamma=1/np.sqrt(1-.2**2)),
                             lambda r:check_vector(r,boost_reference(data,(.2,0.,0.))))
+            if name == 'vector.boost':
+                beta=vector.obj(x=BETA[0],y=BETA[1],z=BETA[2])
+                return Case(name,lambda:other.boost_beta3(beta),
+                            lambda r:check_vector(r,boost_reference(data)))
             if name == 'vector.matrix4d':
                 return Case(name,lambda:other.transform4D(MATRIX4),
                             lambda r:check_vector(r,tuple((i+2)*c for i,c in enumerate(data))))
+            if name == 'vector.matrix4d_array':
+                factor=1.+.01*px
+                matrix={a+b:(factor if a==b else 0.) for a in 'xyzt' for b in 'xyzt'}
+                return Case(name,lambda:other.transform4D(matrix),
+                            lambda r:check_vector(r,tuple(factor*c for c in data)))
             if name == "vector.mass":
                 return Case(name, lambda: other.tau,
                             lambda r: assert_values(r, mass_reference()))
-            beta = vector.obj(x=BETA[0], y=BETA[1], z=BETA[2])
-            return Case(name, lambda: (other + other).boost_beta3(beta).tau,
-                        lambda r: assert_values(r, 2 * mass_reference()))
+            if name == 'vector.workflow':
+                beta = vector.obj(x=BETA[0], y=BETA[1], z=BETA[2])
+                return Case(name, lambda: (other + other).boost_beta3(beta).tau,
+                            lambda r: assert_values(r, 2 * mass_reference()))
+            raise ValueError(f'unknown vector case: {name}')
         if name == "sum":
             if layout in {"numpy", "strided"}:
                 groups = tuple(np.pad(c, (0, (-size) % 4)).reshape(-1, 4) for c in data)
@@ -183,6 +238,9 @@ def core_cases(layout, size, seed, compare_vector=False):
         options = ({"max_cache_size": 0} if name == "mass_uncached" else
                    {"cache_intermediates": True} if name == "properties_intermediates" else {})
         v = LVec(*data, **options)
+        if name in {'rotate_euler_array','rotate_axis_array',
+                    'rotate_euler_varying','rotate_axis_varying'}:
+            return parameter_rotation(name,v,Vector3D,check_components)
         if name == 'unit_cold':
             def unit():
                 v.clear_cache()
@@ -201,9 +259,22 @@ def core_cases(layout, size, seed, compare_vector=False):
         if name == 'matrix4d':
             return Case(name,lambda:v.transform4D(MATRIX4),
                         lambda r:check_components(r,tuple((i+2)*c for i,c in enumerate(data))))
+        if name == 'matrix4d_array':
+            factor=1.+.01*px
+            matrix={a+b:(factor if a==b else 0.) for a in 'xyzt' for b in 'xyzt'}
+            return Case(name,lambda:v.transform4D(matrix),
+                        lambda r:check_components(r,tuple(factor*c for c in data)))
         if name == 'record_mass':
             records=v.to_ak_record(with_behavior=True)
             return Case(name,lambda:records.mass,lambda r:assert_values(r,mass_reference()))
+        if name in {'record_construct','record_construct_mass'}:
+            from lvec.awkward import zip as record_zip
+            fields=dict(zip(('px','py','pz','E'),data))
+            def check_records(r):
+                for value,wanted in zip((r.px,r.py,r.pz,r.E),data):assert_values(value,wanted)
+            if name=='record_construct_mass':
+                return Case(name,lambda:record_zip(fields).mass,lambda r:assert_values(r,mass_reference()))
+            return Case(name,lambda:record_zip(fields),check_records)
         if name == "mass_hot":
             v.mass
         if name in {"mass_cold", "mass_hot", "mass_uncached"}:
@@ -240,12 +311,14 @@ def core_cases(layout, size, seed, compare_vector=False):
 
     names = ["construct", "mass_cold", "mass_hot", "mass_uncached", "properties",
              "properties_intermediates", "add", "boost", "rotate", "sum", "workflow",
-             "unit_cold", "rotate_axis", "rotate_euler", "boost_gamma", "matrix4d"]
+             "unit_cold", "rotate_axis", "rotate_euler", "boost_gamma", "matrix4d",
+             'rotate_euler_array','rotate_axis_array','rotate_euler_varying','rotate_axis_varying','matrix4d_array']
     if layout in {'jagged','missing','deep','heavy-tail'}:
-        names += ['record_mass']
+        names += ['record_mass','record_construct','record_construct_mass']
     if compare_vector and layout in {"numpy", "jagged"}:
         names += ["construct_mass", "vector.construct", "vector.construct_mass", "vector.mass", "vector.workflow",
-                  'vector.unit_cold','vector.rotate_axis','vector.rotate_euler','vector.boost_gamma','vector.matrix4d']
+                  'vector.unit_cold','vector.rotate_axis','vector.rotate_euler','vector.boost_gamma','vector.matrix4d','vector.boost',
+                  'vector.rotate_euler_array','vector.rotate_axis_array','vector.rotate_euler_varying','vector.rotate_axis_varying','vector.matrix4d_array']
     return [CaseSpec(name, lambda name=name: prepare(name)) for name in names], metadata
 
 
