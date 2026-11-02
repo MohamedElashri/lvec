@@ -92,6 +92,12 @@ collection once. `to_ak_record()` without the keyword continues to export plain
 records. `ak.sum` on an owned collection delegates through named native records;
 use `.sum` when an owned collection result is preferred.
 
+For Cartesian float64 columns, `lvec.awkward.zip` and `lvec.awkward.Array`
+attach behavior directly and normally share the numerical buffers. Changes to
+those external buffers are visible to subsequent calculations. Coordinate or
+dtype conversion can allocate new buffers. Use `lvec.zip`, `lvec.Array`, or
+`LVec.from_ak_record` when an independent, immutable snapshot is required.
+
 The record names are `LVec2D`, `LVec3D`, and `LVec4D`. Call
 `lvec.register_awkward()` before reading serialized named records without local
 behavior. It registers these names without replacing existing vector behaviors.
@@ -132,6 +138,15 @@ properties from that collection so their cached values can be reused. Original
 `LVec(px,py,pz,E)`, Cartesian arithmetic, axis rotations, and component-beta
 boosts continue to use their established kernels. Familiar names delegate to
 those kernels where the calculation is identical.
+
+Shared scalar rotation parameters avoid broadcasting coefficient arrays.
+Euler and arbitrary-axis rotations keep up to 128 immutable scalar coefficient
+sets per rotation family; changing orientations beyond that bound exercises
+fresh coefficient evaluation. Per-particle parameters use fused numerical
+leaves, while large scalar transforms and boosts use bounded blocks. Neither
+path retains mutable parameter arrays. Both keep numerical risk detection and
+selective recovery; the benchmark includes repeated orientations, 257 varying
+orientations, and per-particle parameters separately.
 
 Use p4 or signed-gamma boosts when those are the parameters available. They avoid
 losing information by converting an ultrarelativistic reference to beta. Use
