@@ -149,6 +149,14 @@ reads, fresh calculations, construction, and complete workflows. Results include
 hardware, source revision, dependency versions, measurement boundaries, and
 observed dispersion; they describe particular workloads on one machine.
 
+The [kernel optimization study](https://github.com/MohamedElashri/lvec/blob/main/benchmarks/README.md#kernel-optimization-update)
+compares shared and per-particle transformation parameters, small arrays,
+complete workflows, and native record construction. Optimized kernels avoid
+repeated parameter broadcasting and process large operations in bounded
+blocks, retaining selective numerical recovery and owned collection snapshots.
+Native Awkward record factories provide ordinary view semantics when shared
+buffers are appropriate.
+
 ## Development
 
 The [feature parity audit](https://github.com/MohamedElashri/lvec/blob/main/docs/vector-feature-parity.md) compares the public

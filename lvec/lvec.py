@@ -1,14 +1,15 @@
 # lvec.py
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_atan2,
-                        backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, freeze_array, normalize_scalar)
+                        backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, own_plain_components, freeze_array, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
-                    scaled_invariant, invariant_result, awkward_invariant, euclidean_result, dot_result)
+                    scaled_invariant, invariant_result, awkward_invariant, euclidean_result, dot_result, small_invariant)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
 from .frame import Frame
 from ._adaptive import rotation_pair, rotation_coefficients, boost_components, adaptive_sum
 import numpy as np
+import math
 from ._protocol import PlanarAPI, SpatialAPI, LorentzAPI
 
 
@@ -53,6 +54,21 @@ class LVec(LorentzAPI):
         """Normalize components; only internal results may bypass snapshots."""
         self._lib = 'unknown'
         try:
+            values=(px,py,pz,E)
+            if all(isinstance(v,(float,np.floating)) for v in values):
+                self._px,self._py,self._pz,self._E=map(float,values)
+                self._lib='np'
+                return
+            if all(type(v) is float or (type(v) is np.ndarray and v.dtype==np.dtype('float64')) for v in values):
+                shapes=[v.shape for v in values if isinstance(v,np.ndarray) and v.ndim]
+                if shapes and all(shape==shapes[0] for shape in shapes):
+                    shape=shapes[0]
+                    components=tuple(
+                        (v if trusted else np.array(v,copy=True)) if isinstance(v,np.ndarray) and v.ndim
+                        else np.full(shape,float(v),dtype=np.float64) for v in values)
+                    self._px,self._py,self._pz,self._E=map(freeze_array,components)
+                    self._lib='np'
+                    return
             self._px, self._py, self._pz, self._E, self._lib = ensure_array(*(normalize_scalar(x) for x in (px, py, pz, E)))
             components = (self._px, self._py, self._pz, self._E)
             if trusted and self._lib == 'np':
@@ -67,7 +83,8 @@ class LVec(LorentzAPI):
             else:
                 # Awkward ufunc results can reuse index/offset buffers from an
                 # external scalar/angle array. Keep a snapshot of those too.
-                components = own_components(*components)
+                plain=own_plain_components(*components) if self._lib=='ak' else None
+                components=plain if plain is not None else own_components(*components)
             self._px, self._py, self._pz, self._E = components
         except Exception as e:
             if isinstance(e, ShapeError):
@@ -82,13 +99,8 @@ class LVec(LorentzAPI):
                                     cache_intermediates=cache_intermediates,
                                     instrumentation=cache_stats)
         
-        # Register property dependencies
-        self._cache.register_dependency('pt', ['px', 'py'])
-        self._cache.register_dependency('p', ['px', 'py', 'pz'])
-        self._cache.register_dependency('mass2', ['px', 'py', 'pz', 'E'])
-        self._cache.register_dependency('mass', ['px', 'py', 'pz', 'E'])
-        self._cache.register_dependency('phi', ['px', 'py'])
-        self._cache.register_dependency('eta', ['px', 'py', 'pz'])
+        # Final-property dependencies are registered lazily by get_cached.
+        # Most arithmetic results never read every observable.
         
         # Only retained intermediates need dependency bookkeeping.
         if cache_intermediates:
@@ -101,7 +113,7 @@ class LVec(LorentzAPI):
     @classmethod
     def _from_owned(cls, px, py, pz, E, max_cache_size=None, default_ttl=None,
                     *, validate=False, cache_intermediates=False, cache_stats=True,
-                    _trusted_awkward=False):
+                    _trusted_awkward=False, _trusted_numpy=False):
         """Construct from fresh results or existing immutable owned buffers.
 
         Private trusted path: never pass caller-owned mutable arrays here.
@@ -119,7 +131,12 @@ class LVec(LorentzAPI):
                        cache_intermediates=cache_intermediates, cache_stats=cache_stats)
         result = cls.__new__(cls)
         components = (px, py, pz, E)
-        if _trusted_awkward and all(is_ak(value) for value in components):
+        if _trusted_numpy:
+            # Producers prove float64, matching shapes, and fresh/owned data.
+            result._lib='np'
+            result._px,result._py,result._pz,result._E=tuple(
+                freeze_array(c) if isinstance(c,np.ndarray) and c.ndim else float(c) for c in components)
+        elif _trusted_awkward and all(is_ak(value) for value in components):
             result._lib = 'ak'
             result._px, result._py, result._pz, result._E = tuple(
                 freeze_array(value) for value in components)
@@ -344,6 +361,8 @@ class LVec(LorentzAPI):
     def mass2(self):
         """Signed invariant mass squared with metric (+, -, -, -)."""
         def calculate():
+            if type(self) is LVec and self._lib=='np' and not self._cache._cache_intermediates and (not isinstance(self._E,np.ndarray) or self._E.size<=8):
+                return small_invariant(self.px,self.py,self.pz,self.E,squared=True)
             if self._lib == 'ak' and not self._cache._cache_intermediates:
                 return awkward_invariant(*self.to_p4(), squared=True)
             with np.errstate(over='ignore', under='ignore', invalid='ignore'):
@@ -360,6 +379,8 @@ class LVec(LorentzAPI):
         dimensionful tolerance or absolute value hides the sign of m².
         """
         def calc_mass():
+            if type(self) is LVec and self._lib=='np' and not self._cache._cache_intermediates and (not isinstance(self._E,np.ndarray) or self._E.size<=8):
+                return small_invariant(self.px,self.py,self.pz,self.E)
             if self._lib == 'ak' and not self._cache._cache_intermediates:
                 return awkward_invariant(*self.to_p4())
             with np.errstate(over='ignore', under='ignore', invalid='ignore'):
@@ -450,16 +471,22 @@ class LVec(LorentzAPI):
         try:
             # Normalize array-like boost components without changing vector
             # component broadcasting rules.
-            bx, by, bz, boost_lib = ensure_array(*(normalize_scalar(x) for x in (bx, by, bz)))
-            bx, by, bz = own_components(bx, by, bz)
+            bx,by,bz=(normalize_scalar(x) for x in (bx,by,bz))
+            if all(isinstance(b,(float,int)) for b in (bx,by,bz)):
+                bx,by,bz=float(bx),float(by),float(bz)
+                boost_lib='np'
+            else:
+                bx, by, bz, boost_lib = ensure_array(bx,by,bz)
+                bx, by, bz = own_components(bx, by, bz)
             _, delta = validate_beta(bx, by, bz, return_delta=True)
-            gamma = 1.0 / backend_sqrt(delta, boost_lib)
+            gamma = 1.0 / math.sqrt(delta) if isinstance(delta,float) else 1.0 / backend_sqrt(delta, boost_lib)
             px, py, pz, E = boost_components(self.to_p4(), (bx, by, bz), gamma)
 
             # Beta components were snapshotted above; result metadata can only
             # refer to those owned buffers, this collection, or fresh outputs.
             return LVec._from_owned(px, py, pz, E,
-                       _trusted_awkward=self._lib == 'ak' and type(self) is LVec)
+                       _trusted_awkward=self._lib == 'ak' and type(self) is LVec,
+                       _trusted_numpy=self._lib == 'np' and boost_lib == 'np' and type(self) is LVec)
         except Exception as e:
             if isinstance(e, (InputError, DependencyError)):
                 raise

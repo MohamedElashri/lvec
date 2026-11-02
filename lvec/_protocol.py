@@ -468,17 +468,11 @@ class SpatialAPI(PlanarAPI):
 
     def rotate_axis(self,axis,angle):
         """Active right-handed rotation around a nonzero 3D direction."""
-        from ._transform import real_parameter, mapping
+        from ._transform import axis_transform
         if not isinstance(axis,SpatialAPI):
             raise TypeError("axis must be a 3D or 4D vector")
-        if backend_any((axis.x==0)&(axis.y==0)&(axis.z==0)):
-            raise ValueError("Rotation axis must be nonzero")
-        a=directions(axis._components()[:3]);angle=real_parameter(angle)
-        c,s=np.cos(angle),np.sin(angle)
-        skew=[[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]]
-        matrix=[[(c if i==j else 0.)+(1-c)*a[i]*a[j]+s*skew[i][j]
-                 for j in range(3)] for i in range(3)]
-        return self.transform3D(mapping(matrix))
+        values,trusted=axis_transform(self._components(),axis._components()[:3],angle)
+        return self._new(*values,_trusted_awkward=trusted)
 
     def rotate_euler(self,phi,theta,psi,order='zxz'):
         """ROOT/vector Euler convention: R_a(-psi) R_b(-theta) R_c(-phi).
@@ -486,14 +480,9 @@ class SpatialAPI(PlanarAPI):
         ``order=abc`` accepts the six proper Euler and six Tait-Bryan orders.
         The sign differs from a sequence of positive active axis rotations.
         """
-        from ._transform import rotation_matrix, multiply, mapping, real_parameter
-        if order not in ('zxz','xyx','yzy','zyz','xzx','yxy','xzy','xyz','yxz','yzx','zyx','zxy'):
-            raise ValueError("Unsupported Euler rotation order")
-        angles=tuple(real_parameter(a) for a in (phi,theta,psi))
-        matrix=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
-        for axis,angle in zip(order[::-1],angles):
-            matrix=multiply(rotation_matrix(axis,-angle),matrix)
-        return self.transform3D(mapping(matrix))
+        from ._transform import euler_transform
+        values,trusted=euler_transform(self._components(),phi,theta,psi,order)
+        return self._new(*values,_trusted_awkward=trusted)
 
     def rotate_nautical(self,yaw,pitch,roll):
         return self.rotate_euler(roll,pitch,yaw,order='zyx')
@@ -532,12 +521,13 @@ class LorentzAPI(SpatialAPI):
                 from .backends import own_computed_structure
                 *values,lib=ensure_array(*components)
                 result=LVec.__new__(LVec)
-                result._px,result._py,result._pz,result._E=map(own_computed_structure,values)
+                buffers={}
+                result._px,result._py,result._pz,result._E=(own_computed_structure(c,buffers) for c in values)
                 result._lib=lib
                 result._initialize_cache()
                 return result
             if not any(is_ak(c) for c in components):
-                return LVec._from_owned(*components)
+                return LVec._from_owned(*components,_trusted_numpy=_trusted_awkward)
         return type(self)(*components)
 
     def __abs__(self):
@@ -660,12 +650,13 @@ class LorentzAPI(SpatialAPI):
         if gamma is None:
             values=[0.,0.,0.];values[axis]=beta
             return self.boost(*values)
-        from .backends import normalize_scalar
-        from .utils import ensure_array
-        gamma=ensure_array(normalize_scalar(gamma))[0]
-        if backend_any(~np.isfinite(gamma)|(abs(gamma)<1)):
+        import math
+        from ._transform import real_parameter
+        gamma=real_parameter(gamma)
+        invalid=(not math.isfinite(gamma) or abs(gamma)<1) if isinstance(gamma,float) else backend_any(~np.isfinite(gamma)|(abs(gamma)<1))
+        if invalid:
             raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
-        trusted=not is_ak(gamma) and np.ndim(gamma)==0
+        trusted=isinstance(gamma,float) or (isinstance(gamma,np.ndarray) and gamma.ndim==0)
         return self._new(*gamma_axis_boost(self._components(),gamma,axis),_trusted_awkward=trusted)
 
     def boostX(self,beta=None,gamma=None):

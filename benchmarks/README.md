@@ -9,13 +9,15 @@ ordinary workloads. The default suite needs NumPy only and runs offline.
 · [Workloads](#workloads) · [Results](#results)
 · [Secondary vector comparison](#secondary-vector-comparison)
 · [Core parity update](#core-parity-update)
+· [Kernel optimization update](#kernel-optimization-update)
 · [Interpretation and validation](#interpretation-and-validation)
 
 ## Reproduction
 
-Run from the repository root. To reproduce the recorded snapshot, first check
-out commit `a6a3236eb107a2916428c6af51bfefd82c7da6d0` in a dedicated checkout and
-use Python 3.13.12 with these dependency versions:
+Run from the repository root. Use the exact revision named in the study being
+reproduced: the initial tables use `a6a3236eb107a2916428c6af51bfefd82c7da6d0`;
+the latest kernel study has its own revision and commands below. The recorded
+environment uses Python 3.13.12 with these dependency versions:
 
 ```bash
 python -m pip install -e ".[test]" numpy==2.5.4 awkward==2.14.0 vector==1.9.0
@@ -23,7 +25,7 @@ python -m benchmarks --check --layouts numpy strided jagged missing deep heavy-t
 python -m benchmarks --check --layouts numpy jagged --sizes 1 17 --compare-vector
 ```
 
-The recorded runs used the default timing settings and the following selections.
+The initial study used the default timing settings and the following selections.
 Add `--output /tmp/run-name.md` to each command to retain its full report.
 
 ```bash
@@ -122,8 +124,16 @@ Default LVec cache policies are used unless stated otherwise.
 | `boost_gamma` | X-axis boost with gamma=1/sqrt(1-0.2²), checked against an independent beta formula |
 | `matrix4d` | General transformation API with diagonal matrix diag(2,3,4,5); this is not a norm-preserving matrix |
 | `record_mass` | Uncached mass calculation through native Awkward record behavior; Awkward layouts only |
+| `rotate_euler_array` | Per-particle phi=0.2+0.01*px, fixed theta=0.3 and psi=0.4; independent elementary-rotation reference |
+| `rotate_axis_array` | Per-particle axis=(px+2,py+3,pz+4) and angle=0.2+0.01*px; independent Rodrigues reference |
+| `rotate_euler_varying`, `rotate_axis_varying` | Cycle through 257 pre-generated scalar angles; exceeds each 128-entry coefficient cache; angle selection is timed |
+| `matrix4d_array` | Diagonal matrix with per-particle factor 1+0.01*px; scalar off-diagonal zeros |
+| `record_construct` | Construct native records from Cartesian float64 columns, with ordinary Awkward view semantics |
+| `record_construct_mass` | Native Cartesian record construction followed by recomputed mass |
 
-The final six cases were added with core numerical parity. Their `vector.*`
+Normalization, arbitrary rotations, gamma boosts, matrices and native behavior
+were added with core numerical parity; the parameter variants and native
+construction cases extend the optimization study. Their `vector.*`
 counterparts, where applicable, are opt-in through `--compare-vector` on NumPy
 and jagged layouts. Native `record_mass` compares naturally with `vector.mass`;
 owned `mass_hot` has a populated cache and represents a different boundary.
@@ -159,6 +169,218 @@ representative particle-energy distribution. Ordinary checks use independent
 NumPy/Awkward formulas for components and observables and verify the full visible
 list and option structure. RuntimeWarnings, failed checks, worker errors, and
 timeouts fail the command rather than producing a completed report.
+
+## Kernel optimization update
+
+This study measures the optimization branch on **2026-11-02 (Europe/Zurich)**
+against the feature-parity implementation. It uses the Apple M1, Python and
+dependency versions in the experimental setup above. Both revisions use the
+same current workload definitions. The full comparison contains **158 rows per
+revision**, pooling 21 samples from three fresh processes per layout-size cell,
+plus separate allocation workers. Reports identify clean, fixed source
+checkouts; documentation edits were made outside those checkouts.
+
+| Artifact | Revision or fingerprint |
+| --- | --- |
+| Baseline revision | `11cc58a25332f83c919f5d975ec69f745e968a37` |
+| Optimized revision | `a270b7897c3b60132dcccc7a7300f3d7ca85556f` |
+| Baseline library SHA256 | `df2313a4bc40154e98382feb993a6445eb125298dc59c906cd1c817a8c6aaebc` |
+| Optimized library SHA256 | `06d4f7045da86e31b765c3d174fb784ac200470e42f139555f2b7220582e3278` |
+| Shared framework SHA256 | `c3333ef50d492ebf927ba62f25d7f2623280b070cbcc1f92f893f045605d844f` |
+
+### What changed
+
+- Scalar and short-array transforms, boosts and invariants avoid general
+  array setup. Large constant transforms and beta boosts use 65,536-element
+  blocks; per-particle arbitrary-axis rotations use 16,384-element blocks to
+  limit temporary-array traffic.
+- Per-particle rotations evaluate inside numerical leaves, avoiding nine
+  separately broadcast matrix columns. Scalar matrix coefficients stay scalar
+  during Awkward traversal. Matching owned component shapes need no repeated
+  broadcast pass.
+- Immutable scalar rotation coefficients have bounded caches of 128 entries
+  per family. The 257-orientation cases exceed that bound; per-particle arrays
+  are never retained in these caches.
+- Cache dependencies initialize lazily. Canonical NumPy construction and plain
+  Awkward list layouts avoid redundant validation and structural copies while
+  preserving independent, read-only public snapshots. Unusual layouts retain
+  the general validation path.
+- Native Cartesian float64 record factories attach behavior to Awkward views
+  directly. This removes a redundant owned-collection conversion. Such records
+  share external buffers where possible; use owned constructors when external
+  mutation must not affect subsequent calculations.
+
+Cancellation and range checks remain active. Risky points retain exact binary
+or Decimal recovery as appropriate; fused rotations re-evaluate selected points
+from their original coordinates and full matrix coefficients. Performance does
+not imply universal correct rounding or reversibility.
+
+### Short arrays
+
+One-element **NumPy arrays**, microseconds per call (median ± MAD).
+
+| Case | Previous LVec | Optimized LVec | vector |
+| --- | ---: | ---: | ---: |
+| `construct_mass` | 30.864 ± 0.189 | 11.010 ± 0.058 | 24.065 ± 0.360 |
+| `mass_uncached` | 11.662 ± 0.031 | 3.745 ± 0.042 | 13.047 ± 0.172 |
+| `boost` | 75.232 ± 0.431 | 14.505 ± 0.016 | 31.090 ± 0.279 |
+| `matrix4d` | 143.592 ± 0.338 | 19.355 ± 0.112 | 28.095 ± 0.158 |
+| `matrix4d_array` | 135.438 ± 0.708 | 27.449 ± 0.081 | 27.453 ± 0.171 |
+| `rotate_euler` | 138.277 ± 0.958 | 15.077 ± 0.071 | 25.391 ± 0.124 |
+| `rotate_euler_array` | 182.952 ± 0.991 | 25.382 ± 0.186 | 31.117 ± 0.095 |
+| `rotate_axis_array` | 135.082 ± 0.810 | 34.870 ± 0.417 | 41.646 ± 0.214 |
+| `workflow` | 113.587 ± 1.493 | 27.253 ± 0.178 | 73.009 ± 0.357 |
+
+### Large-array comparisons
+
+Milliseconds per call, median ± MAD. NumPy: 100,000 particles; jagged:
+100,000 events containing 401,402 particles. These are complete calls on
+existing collections. Shared scalar parameters are used unless the case
+name specifies arrays or varying orientations.
+
+| Case | NumPy LVec | NumPy vector | Jagged LVec | Jagged vector |
+| --- | ---: | ---: | ---: | ---: |
+| `mass_uncached` | 0.315 ± 0.026 | 0.387 ± 0.017 | 3.049 ± 0.348 | 3.730 ± 0.087 |
+| `unit_cold` | 0.519 ± 0.012 | 1.878 ± 0.047 | 4.697 ± 0.573 | 9.583 ± 0.388 |
+| `boost` | 0.796 ± 0.010 | 1.620 ± 0.017 | 4.687 ± 0.280 | 7.381 ± 0.086 |
+| `boost_gamma` | 0.357 ± 0.018 | 0.779 ± 0.010 | 3.890 ± 0.151 | 6.664 ± 0.139 |
+| `matrix4d` | 0.543 ± 0.014 | 1.577 ± 0.006 | 3.586 ± 0.072 | 7.463 ± 0.228 |
+| `matrix4d_array` | 0.861 ± 0.013 | 1.669 ± 0.031 | 5.845 ± 0.232 | 8.390 ± 0.432 |
+| `rotate_axis` | 0.783 ± 0.015 | 1.096 ± 0.033 | 4.265 ± 0.075 | 4.948 ± 0.229 |
+| `rotate_axis_array` | 2.709 ± 0.065 | 3.605 ± 0.090 | 13.275 ± 0.519 | 16.120 ± 0.554 |
+| `rotate_axis_varying` | 0.774 ± 0.031 | 1.137 ± 0.034 | 4.699 ± 0.292 | 4.512 ± 0.339 |
+| `rotate_euler` | 0.779 ± 0.029 | 1.113 ± 0.027 | 4.363 ± 0.154 | 4.899 ± 0.066 |
+| `rotate_euler_array` | 1.479 ± 0.012 | 2.159 ± 0.042 | 8.541 ± 0.706 | 9.846 ± 0.057 |
+| `rotate_euler_varying` | 0.776 ± 0.020 | 1.142 ± 0.013 | 4.232 ± 0.061 | 4.864 ± 0.144 |
+| `workflow` | 1.342 ± 0.035 | 2.782 ± 0.059 | 9.611 ± 0.415 | 13.188 ± 0.313 |
+
+### Changes from the feature-parity revision
+
+Milliseconds per call, median ± MAD; ratios are previous/optimized pooled medians.
+
+| Layout | Case | Previous LVec | Optimized LVec | Speedup |
+| --- | --- | ---: | ---: | ---: |
+| numpy | `boost` | 1.328 ± 0.027 | 0.796 ± 0.010 | 1.67x |
+| numpy | `workflow` | 1.982 ± 0.037 | 1.342 ± 0.035 | 1.48x |
+| jagged | `boost` | 8.822 ± 0.302 | 4.687 ± 0.280 | 1.88x |
+| jagged | `rotate_axis` | 8.397 ± 0.680 | 4.265 ± 0.075 | 1.97x |
+| jagged | `rotate_euler` | 8.356 ± 0.396 | 4.363 ± 0.154 | 1.92x |
+| jagged | `rotate_axis_array` | 50.308 ± 3.344 | 13.275 ± 0.519 | 3.79x |
+| jagged | `rotate_euler_array` | 90.773 ± 8.418 | 8.541 ± 0.706 | 10.63x |
+| jagged | `matrix4d_array` | 34.581 ± 1.961 | 5.845 ± 0.232 | 5.92x |
+| jagged | `workflow` | 13.302 ± 1.306 | 9.611 ± 0.415 | 1.38x |
+
+### Allocation and construction boundaries
+
+Incremental traced **peak MiB** for the jagged 100,000-event cases;
+live outputs are included. These are allocations, not process RSS.
+
+| Case | Previous LVec | Optimized LVec | vector |
+| --- | ---: | ---: | ---: |
+| `boost` | 24.53 | 14.78 | 15.36 |
+| `matrix4d` | 18.40 | 13.28 | 15.36 |
+| `matrix4d_array` | 58.26 | 13.05 | 15.36 |
+| `rotate_axis_array` | 70.54 | 11.48 | 36.80 |
+| `rotate_euler_array` | 61.38 | 13.72 | 18.42 |
+
+| Jagged construction boundary | LVec ms | vector ms |
+| --- | ---: | ---: |
+| Owned snapshot / vector record factory | 1.505 ± 0.048 | 0.245 ± 0.001 |
+| Native record factory / native record factory | 0.244 ± 0.001 | 0.245 ± 0.001 |
+| Native construction + mass / native construction + mass | 3.239 ± 0.287 | 4.201 ± 0.095 |
+
+### Alternating revision checks
+
+Three matched rounds used before/after, after/before, before/after ordering,
+one fresh process and seven samples per case in each invocation. The table
+shows the median of the three within-round **after/before** median ratios;
+smaller is faster. These ratios need not equal ratios of the full-run medians.
+
+| Case | NumPy ratio | Jagged ratio |
+| --- | ---: | ---: |
+| `construct_mass` | 1.037 | 0.967 |
+| `mass_uncached` | 1.009 | 0.945 |
+| `add` | 0.889 | 0.938 |
+| `boost` | 0.615 | 0.536 |
+| `rotate` | 0.953 | 0.958 |
+| `workflow` | 0.679 | 0.793 |
+| `vector.workflow` | 1.122 | 1.043 |
+
+The one-element per-particle matrix and native record factory are effectively
+at parity in these measurements. The varying-axis jagged median is 4.699 ms
+for LVec versus 4.512 ms for vector, with substantial dispersion; no speedup is
+claimed for that fixture. Other listed large numerical fixtures favor LVec in
+this run.
+
+Owned construction includes numerical-buffer snapshots; vector's jagged
+factory principally attaches metadata to existing buffers. The native record
+rows compare corresponding view-construction boundaries. They should be used
+when evaluating migration of code that already relies on ordinary Awkward
+view semantics. Cached `mass_hot` remains a separate use case.
+
+The paired runs show substantial beta-boost and workflow improvements. Small
+changes in construction, uncached mass and existing axis rotations should not
+be interpreted as proven wins: the unchanged vector workflow also shifted
+between runs. Close vector comparisons in the full tables likewise require
+repetition on controlled target hardware. These results characterize the
+listed fixtures, rather than establish that every LVec operation is faster for
+every shape or parameter distribution.
+
+### Numerical validation and reproduction
+
+The final kernel revision passes **586 tests** with current dependencies,
+minimum dependencies, and Python 3.15. NumPy-only passes **301 tests**, with
+optional-backend tests skipped. CI also passes Python 3.10–3.15, distribution
+build/install checks and the action lockfile check. New tests cover all 12 Euler
+conventions, independent rotation matrices, spatial norms, subnormal and extreme
+axes, exact matrix-product references, numerical block boundaries, mutable
+parameter buffers, missing masks, scalar native records, and subclass behavior.
+Existing physics, frame, decay-conservation, cache-lifecycle and ownership
+regressions remain in the suite.
+
+All **555 library tests** also pass from the installed wheel outside the
+checkout. Both the wheel and source distribution contain the measured library
+fingerprint above.
+
+The expanded workload validation additionally checks strided, missing, deep and
+heavy-tail data at size 1,000. The precision suite measures cancellation and
+0/1/100 exceptional boost entries at sizes 1,000 and 10,000, with independent
+Fraction/400-digit Decimal references. Recovery-heavy inputs remain a separate
+workload, rather than being averaged into ordinary performance.
+
+To reproduce, create separate clean checkouts of the two revisions above and
+invoke the **optimized framework** from the optimized checkout. Run these
+commands sequentially, using the pinned dependencies in the reproduction
+section:
+
+```bash
+python -m benchmarks --source /path/to/baseline --layouts numpy jagged \
+  --sizes 1 100000 --compare-vector --processes 3 --samples 7 \
+  --output /tmp/lvec-perf-before-full.md
+python -m benchmarks --source /path/to/optimized --layouts numpy jagged \
+  --sizes 1 100000 --compare-vector --processes 3 --samples 7 \
+  --output /tmp/lvec-perf-after-final.md
+python -m benchmarks --check --layouts strided missing deep heavy-tail --sizes 1000
+python -m benchmarks --layouts extreme --sizes 1000 10000 \
+  --processes 3 --samples 7 --output /tmp/lvec-perf-precision.md
+```
+
+For the alternating study, run the command below against each checkout in
+before/after, after/before, before/after order, saving six distinct reports:
+
+```bash
+python -m benchmarks --source /path/to/revision --layouts numpy jagged \
+  --sizes 100000 --compare-vector --processes 1 --samples 7 --no-memory \
+  --cases construct_mass mass_uncached add boost rotate workflow vector.workflow \
+  --output /tmp/lvec-perf-paired-revision-round.md
+```
+
+Raw samples, allocation reports and source archives are retained outside Git.
+Only this curated summary and the executable framework are tracked; no JSON
+result files are required or written.
+
+The following sections retain the earlier studies with their original source
+revisions and workload definitions.
 
 ## Results
 

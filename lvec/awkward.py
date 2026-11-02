@@ -148,10 +148,45 @@ def register_awkward():
 
 
 def Array(data,**kwargs):
+    records=ak.Array(data,**kwargs)
+    columns={name:records[name] for name in ak.fields(records)}
+    native=_cartesian_records(columns)
+    if native is not None:return native
     from ._coordinates import Array as collection
-    return collection(data,**kwargs).to_ak_record(with_behavior=True)
+    return collection(records).to_ak_record(with_behavior=True)
 
 
 def zip(arrays,depth_limit=None):
+    if depth_limit is None:
+        native=_cartesian_records(arrays)
+        if native is not None:return native
     from ._coordinates import zip as collection
     return collection(arrays,depth_limit).to_ak_record(with_behavior=True)
+
+
+def _cartesian_records(columns):
+    """Native Cartesian records retain Awkward views, with no property cache."""
+    from ._coordinates import _ALIASES
+    canonical={}
+    for name,value in columns.items():
+        field=_ALIASES.get(name,name)
+        if field not in {'x','y','z','t'} or field in canonical:return None
+        canonical[field]=value
+    dimension=len(canonical)
+    if dimension not in (2,3,4) or set(canonical)!=set('xyzt'[:dimension]):return None
+    records=ak.zip(canonical,with_name=f'LVec{dimension}D',
+                   behavior=behavior,optiontype_outside_record=True)
+    layout=records.layout.array if isinstance(records,ak.Record) else records.layout
+    while layout.is_list or layout.is_option or layout.is_indexed:
+        layout=layout.content
+    if layout.is_record and all(
+            (field.is_numpy and field.dtype==np.dtype('float64') and not field.parameters)
+            or field.is_unknown for field in layout.contents):
+        # zip guarantees a common record structure and whole-vector masks.
+        # Its leaf schema proves canonical real components without four field
+        # projections, another broadcast walk, or a no-op astype traversal.
+        return records
+    # Validate real numerical leaf types before any dtype conversion. zip has
+    # already broadcast columns and coalesced their missing-vector masks.
+    ensure_array(*(records[name] for name in 'xyzt'[:dimension]))
+    return ak.values_astype(records,np.float64)

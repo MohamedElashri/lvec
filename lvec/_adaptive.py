@@ -102,12 +102,18 @@ def _boost_decimal(row):
 
 def _boost_range_risk(values, gamma):
     """A coarse buffer bound avoids per-entry tests on well-scaled inputs."""
+    max_gamma = float(np.max(gamma, initial=1.))
+    if max_gamma>1e4:return True
     largest, smallest = 0., math.inf
     for value in values:
         absolute = abs(value)
-        largest = max(largest, float(np.fmax.reduce(absolute, axis=None, initial=0.)))
-        smallest = min(smallest, float(np.fmin.reduce(absolute, axis=None, where=absolute != 0, initial=np.inf)))
-    max_gamma = float(np.max(gamma, initial=1.))
+        upper=float(np.fmax.reduce(absolute,axis=None,initial=0.))
+        largest=max(largest,upper)
+        if upper==0:continue
+        lower=float(np.fmin.reduce(absolute,axis=None,initial=np.inf))
+        if lower==0:
+            lower=float(np.fmin.reduce(absolute,axis=None,where=absolute!=0,initial=np.inf))
+        smallest=min(smallest,lower)
     return (max_gamma > 1e4 or largest > np.finfo(float).max/(8*max_gamma)
             or (0 < largest < _TINY) or smallest < 1e-12*largest)
 
@@ -154,12 +160,64 @@ def boost_components(values, beta, gamma):
     # Scalar parameters need no Awkward-sized buffers. Broadcast zero-stride
     # NumPy views inside each numerical leaf, retaining the exact same kernel
     # and per-entry precision recovery (including gamma indexing).
-    if any(is_ak(value) for value in values) and all(np.isscalar(x) for x in (*beta, gamma)):
+    if all(np.isscalar(x) for x in (*beta,gamma)):
+        from ._transform import dispatch_owned
         def kernel(*components):
-            return _boost_numpy(*np.broadcast_arrays(*components, *beta, gamma))
-        kernel.outputs = 4
-        return _dispatch(kernel, *values)
+            return _constant_beta_numpy(components,beta,float(gamma))
+        kernel.outputs=4
+        return dispatch_owned(kernel,values)
     return _dispatch(_boost_numpy, *values, *beta, gamma)
+
+
+def _small_beta(point,beta,gamma):
+    px,py,pz,energy=point
+    bx,by,bz=beta
+    bp=bx*px+by*py+bz*pz
+    t=gamma*gamma/(gamma+1)*bp+gamma*energy
+    result=(px+t*bx,py+t*by,pz+t*bz,gamma*(energy+bp))
+    largest=max(map(abs,point))
+    smallest=min((abs(c) for c in point if c!=0),default=math.inf)
+    hierarchy=smallest<1e-12*largest or (0<largest<_TINY) or gamma>1e4
+    broken=not all(math.isfinite(c) for c in result)
+    cancellation=(abs(energy+bp)<=_RTOL*abs(energy) or (abs(result[3])<_TINY and energy!=0))
+    cancellation=cancellation or any((abs(out)<=_RTOL*abs(p) or abs(out)<_TINY) and p!=0
+                                     for p,out in zip(point[:3],result))
+    if (broken or (hierarchy and cancellation)) and all(math.isfinite(c) for c in (*point,*beta)):
+        return _boost_decimal((*point,*beta))
+    return result
+
+
+def _constant_beta_numpy(values,beta,gamma):
+    shape=values[0].shape;size=values[0].size
+    outputs=tuple(np.empty(shape,dtype=np.float64) for _ in range(4))
+    if size<=8:
+        for i in range(size):
+            result=_small_beta(tuple(float(c.flat[i]) for c in values),beta,gamma)
+            for output,value in zip(outputs,result):output.flat[i]=value
+        return outputs
+    from ._transform import _BLOCK
+    inputs=tuple(c.reshape(-1) for c in values)
+    flat_outputs=tuple(c.reshape(-1) for c in outputs)
+    bx,by,bz=beta
+    factor=gamma*gamma/(gamma+1)
+    with np.errstate(over='ignore',under='ignore',invalid='ignore'):
+        for start in range(0,size,_BLOCK):
+            stop=min(size,start+_BLOCK)
+            px,py,pz,e=(c[start:stop] for c in inputs)
+            target=tuple(c[start:stop] for c in flat_outputs)
+            bp=bx*px
+            scratch=by*py
+            np.add(bp,scratch,out=bp)
+            np.multiply(pz,bz,out=scratch);np.add(bp,scratch,out=bp)
+            t=factor*bp
+            np.multiply(e,gamma,out=scratch);np.add(t,scratch,out=t)
+            for original,b,output in zip((px,py,pz),beta,target):
+                np.multiply(t,b,out=output);np.add(output,original,out=output)
+            np.add(e,bp,out=target[3]);np.multiply(target[3],gamma,out=target[3])
+            if _boost_range_risk((px,py,pz,e),gamma):
+                corrected=_boost_numpy(*np.broadcast_arrays(px,py,pz,e,bx,by,bz,gamma))
+                for output,value in zip(target,corrected):output[:]=value
+    return outputs
 
 
 def _finite_sum(values):
