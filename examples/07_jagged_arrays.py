@@ -42,7 +42,7 @@ print(f"Dot product: {dot_product}")
 
 # Indexing into jagged arrays
 print("\nIndexing into first element of each subarray:")
-first_elements = vec2d_jagged[0]
+first_elements = vec2d_jagged[:, 0]
 print(f"First elements: ({first_elements.x}, {first_elements.y})")
 
 print("\n=== Jagged Arrays with Vector3D ===\n")
@@ -84,7 +84,7 @@ print(f"Cross product: ({cross_product.x}, {cross_product.y}, {cross_product.z})
 
 # Indexing into jagged arrays
 print("\nIndexing into first element of each subarray:")
-first_elements = vec3d_jagged[0]
+first_elements = vec3d_jagged[:, 0]
 print(f"First elements: ({first_elements.x}, {first_elements.y}, {first_elements.z})")
 
 print("\n=== Practical Example: Particle Physics Data ===\n")
@@ -125,5 +125,5 @@ print(f"\nTotal momentum magnitude: {total_momentum.r}")
 high_pt_mask = pt > 50
 high_pt_particles = momenta[high_pt_mask]
 
-print(f"\nHigh-pt particles (pt > 50): {ak.num(high_pt_particles.x, axis=0)}")
+print(f"\nHigh-pt particles per event (pt > 50): {ak.num(high_pt_particles.x, axis=1)}")
 print(f"High-pt px values: {high_pt_particles.x}")

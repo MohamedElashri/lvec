@@ -1,9 +1,7 @@
 import os
-import sys
 import urllib.request
 import numpy as np
 import uproot
-import awkward as ak
 import matplotlib.pyplot as plt
 from lvec import LVec 
 from lvec.backends import to_np  
@@ -34,29 +32,27 @@ def download_data():
     return filename
 
 def analyze_data(filename):
-    # Open the ROOT file
-    file = uproot.open(filename)
-    tree = file["DecayTree"]
-    
-    # Get the momentum components
-    data = tree.arrays(["H1_PX", "H1_PY", "H1_PZ",
-                       "H2_PX", "H2_PY", "H2_PZ",
-                       "H3_PX", "H3_PY", "H3_PZ"])
-    
-    # Convert awkward arrays to numpy arrays
-    h1_px = to_np(data["H1_PX"])
-    h1_py = to_np(data["H1_PY"])
-    h1_pz = to_np(data["H1_PZ"])
-    
-    h2_px = to_np(data["H2_PX"])
-    h2_py = to_np(data["H2_PY"])
-    h2_pz = to_np(data["H2_PZ"])
-    
-    h3_px = to_np(data["H3_PX"])
-    h3_py = to_np(data["H3_PY"])
-    h3_pz = to_np(data["H3_PZ"])
-    
-    # Calculate energies assuming pion mass (139.57 MeV)
+    """Return pair masses in GeV using the pion hypothesis for each track."""
+    with uproot.open(filename) as file:
+        data = file["DecayTree"].arrays(["H1_PX", "H1_PY", "H1_PZ",
+                                       "H2_PX", "H2_PY", "H2_PZ",
+                                       "H3_PX", "H3_PY", "H3_PZ"])
+
+    # LHCb stores momenta in MeV/c; use GeV throughout, with c = 1.
+    # Source: https://opendata.cern.ch/record/4902 (Units).
+    h1_px = to_np(data["H1_PX"]) / 1000
+    h1_py = to_np(data["H1_PY"]) / 1000
+    h1_pz = to_np(data["H1_PZ"]) / 1000
+
+    h2_px = to_np(data["H2_PX"]) / 1000
+    h2_py = to_np(data["H2_PY"]) / 1000
+    h2_pz = to_np(data["H2_PZ"]) / 1000
+
+    h3_px = to_np(data["H3_PX"]) / 1000
+    h3_py = to_np(data["H3_PY"]) / 1000
+    h3_pz = to_np(data["H3_PZ"]) / 1000
+
+    # Illustrate the pion mass hypothesis for all three tracks.
     pion_mass = 0.13957  # GeV
     
     def calculate_energy(px, py, pz):
@@ -82,7 +78,7 @@ def plot_mass_distributions(m12, m23, m13):
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
     
     # Common histogram parameters
-    bins = np.linspace(0, 5.5, 100)
+    bins = np.linspace(0, 5.5, 101)
     hist_kwargs = dict(histtype='step', linewidth=2, color='blue')
     
     # Plot m12 distribution
