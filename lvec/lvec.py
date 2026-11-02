@@ -9,9 +9,10 @@ from .caching import PropertyCache
 from .frame import Frame
 from ._adaptive import rotation_pair, rotation_coefficients, boost_components, adaptive_sum
 import numpy as np
+from ._protocol import PlanarAPI, SpatialAPI, LorentzAPI
 
 
-class LVec:
+class LVec(LorentzAPI):
     """
     Lorentz Vector class supporting both NumPy and Awkward array backends.
     
@@ -199,7 +200,9 @@ class LVec:
     @classmethod
     def from_vec(cls, vobj):
         """Create from another vector-like object with px, py, pz, E attributes."""
-        return cls(vobj.px, vobj.py, vobj.pz, vobj.E)
+        if all(hasattr(vobj,name) for name in ('px','py','pz','E')):
+            return cls(vobj.px, vobj.py, vobj.pz, vobj.E)
+        return cls(vobj.x, vobj.y, vobj.z, vobj.t)
     
     def clear_cache(self):
         """Clear the computed property cache."""
@@ -399,18 +402,22 @@ class LVec:
 
     def __add__(self, other):
         """Add two Lorentz vectors."""
+        self._check_other(other)
         return LVec._from_owned(self.px + other.px, self.py + other.py,
                    self.pz + other.pz, self.E + other.E,
                    _trusted_awkward=self._lib == 'ak' and type(self) is LVec and type(other) is LVec)
     
     def __sub__(self, other):
         """Subtract two Lorentz vectors."""
+        self._check_other(other)
         return LVec._from_owned(self.px - other.px, self.py - other.py,
                    self.pz - other.pz, self.E - other.E,
                    _trusted_awkward=self._lib == 'ak' and type(self) is LVec and type(other) is LVec)
     
     def __mul__(self, scalar):
         """Multiply by scalar."""
+        if isinstance(scalar,PlanarAPI):
+            raise TypeError("Use dot or @ for vector products")
         return LVec._from_owned(scalar * self.px, scalar * self.py,
                    scalar * self.pz, scalar * self.E,
                    _trusted_awkward=self._lib == 'ak' and type(self) is LVec
@@ -423,7 +430,7 @@ class LVec:
         return LVec._from_owned(self.px[idx], self.py[idx],
                    self.pz[idx], self.E[idx])
     
-    def boost(self, bx, by, bz):
+    def boost(self, bx=None, by=None, bz=None, *, booster=None):
         """
         Apply Lorentz boost.
         
@@ -432,6 +439,14 @@ class LVec:
             BackendError: If there's an issue with the backend calculations
             DependencyError: If required backend package is not available
         """
+        if booster is not None:
+            if bx is not None or by is not None or bz is not None:
+                raise TypeError("Specify a booster or three beta components")
+            bx=booster
+        if by is None and bz is None and isinstance(bx,SpatialAPI):
+            return self.boost_p4(bx) if isinstance(bx,LorentzAPI) else self.boost_beta3(bx)
+        if bx is None or by is None or bz is None:
+            raise TypeError("Specify a 3D/4D booster or all three beta components")
         try:
             # Normalize array-like boost components without changing vector
             # component broadcasting rules.
@@ -676,8 +691,8 @@ class LVec:
 
     def delta_phi(self, other):
         """Signed self.phi - other.phi wrapped to [-pi, pi), in radians."""
-        if not isinstance(other, LVec):
-            raise TypeError("other must be an LVec")
+        if not isinstance(other, PlanarAPI):
+            raise TypeError("other must be a numerical vector")
         return (self.phi - other.phi + np.pi) % (2 * np.pi) - np.pi
 
     def delta_r2(self, other, *, rapidity=False):
@@ -687,8 +702,8 @@ class LVec:
         common longitudinal boosts of physical vectors. Beam-axis inf-inf
         differences and other undefined coordinates return NaN.
         """
-        if not isinstance(other, LVec):
-            raise TypeError("other must be an LVec")
+        if not isinstance(other, SpatialAPI) or (rapidity and not isinstance(other,LorentzAPI)):
+            raise TypeError("other must have the required spatial/temporal coordinates")
         with np.errstate(invalid='ignore'):
             longitudinal = ((self.rapidity - other.rapidity) if rapidity
                             else (self.eta - other.eta))
@@ -698,7 +713,7 @@ class LVec:
         """Angular separation; see delta_r2 for eta and rapidity conventions."""
         return np.sqrt(self.delta_r2(other, rapidity=rapidity))
 
-    def sum(self, axis=None, *, keepdims=False):
+    def sum(self, axis=None, dtype=None, out=None, keepdims=False, *, initial=None, where=None):
         """Sum four-momentum components along an array axis.
 
         axis=None sums the whole collection; axis=-1 sums particles within each
@@ -706,6 +721,7 @@ class LVec:
         Awkward missing particles are skipped; missing events remain missing
         when reducing their particle axis. All components must share masks.
         """
+        self._validate_reduction(dtype, out, initial, where)
         components = [adaptive_sum(c, axis=axis, keepdims=keepdims)
                       for c in self.to_p4()]
         if type(self) is LVec and self._lib == 'ak':
@@ -722,12 +738,18 @@ class LVec:
         if not isinstance(records, (ak.Array, ak.Record)):
             raise TypeError("records must be an Awkward Array or Record")
         required = {'px', 'py', 'pz', 'E'}
-        if not required.issubset(ak.fields(records)):
+        generic={'x','y','z','t'}
+        fields=set(ak.fields(records))
+        if required.issubset(fields):
+            names=('px','py','pz','E')
+        elif generic.issubset(fields):
+            names=('x','y','z','t')
+        else:
             raise InputError('records', ak.fields(records),
-                             'Fields px, py, pz, E are required')
-        return cls(*(records[field] for field in ('px', 'py', 'pz', 'E')))
+                             'Fields px, py, pz, E (or x, y, z, t) are required')
+        return cls(*(records[field] for field in names))
 
-    def to_ak_record(self):
+    def to_ak_record(self,*,with_behavior=False):
         """Export px, py, pz, E as Awkward records, preserving jagged structure.
 
         Scalars produce an ak.Record. Array inputs produce an ak.Array with
@@ -739,9 +761,13 @@ class LVec:
         except ImportError as exc:
             raise DependencyError('awkward') from exc
         fields = dict(zip(('px', 'py', 'pz', 'E'), self.to_p4()))
+        options={}
+        if with_behavior:
+            from .awkward import behavior
+            options={'with_name':'LVec4D','behavior':behavior}
         if self._lib == 'np' and all(np.ndim(c) == 0 for c in self.to_p4()):
-            return ak.Record(fields)
-        return ak.zip(fields, optiontype_outside_record=True)
+            return ak.zip(fields,**options)
+        return ak.zip(fields, optiontype_outside_record=True,**options)
 
     def boost_to_rest(self, reference=None):
         """Boost to the rest frame of reference (self when omitted).
