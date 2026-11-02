@@ -20,6 +20,12 @@ class _TransientCache:
 
 
 class _Borrowed:
+    def _new(self,*components,_trusted_awkward=False):
+        # The result is immediately wrapped as native records. Preserve their
+        # view semantics instead of round-tripping through owned snapshots.
+        *values,lib=ensure_array(*components)
+        return _borrowed(type(self),values,lib)
+
     def _get_cached(self,key,func,*args,**kwargs):
         return func()
 
@@ -46,8 +52,12 @@ def _view(record,dimension):
     *values,lib=ensure_array(*values)
     values=[ak.values_astype(c,np.float64) if isinstance(c,ak.Array) else float(c) for c in values]
     cls={2:_Borrowed2D,3:_Borrowed3D,4:_Borrowed4D}[dimension]
+    return _borrowed(cls,values,lib)
+
+
+def _borrowed(cls,values,lib):
     result=cls.__new__(cls)
-    storage=('_px','_py','_pz','_E') if dimension==4 else ('_x','_y','_z')
+    storage=('_px','_py','_pz','_E') if cls._dimension==4 else ('_x','_y','_z')
     for name,value in builtins.zip(storage,values):setattr(result,name,value)
     result._lib=lib
     result._cache=_TransientCache()

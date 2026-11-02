@@ -495,6 +495,10 @@ class SpatialAPI(PlanarAPI):
         """
         from ._transform import real_parameter, mapping
         u,i,j,k=map(real_parameter,(u,i,j,k))
+        if any(is_ak(c) or np.ndim(c)>0 for c in (u,i,j,k)):
+            from ._rotation import quaternion
+            trusted=not any(is_ak(c) for c in (*self._components(),u,i,j,k))
+            return self._new(*quaternion(self._components(),(u,i,j,k)),_trusted_awkward=trusted)
         v=(i,j,k);base=u*u-i*i-j*j-k*k
         skew=[[0.,-k,j],[k,0.,-i],[-j,i,0.]]
         matrix=[[(base if a==b else 0.)+2*v[a]*v[b]+2*u*skew[a][b]
@@ -620,14 +624,28 @@ class LorentzAPI(SpatialAPI):
         if not isinstance(p4,LorentzAPI):
             raise TypeError("p4 must be a Lorentz vector")
         mass=p4.mass
-        invalid=(p4.E<=0)|(mass<=0)|~np.isfinite(mass)
-        for c in p4._components():invalid=invalid|~np.isfinite(c)
-        if backend_any(invalid):
+        components=p4._components()
+        scalar=all(isinstance(c,float) for c in components)
+        if scalar:
+            import math
+            invalid=p4.E<=0 or mass<=0 or not all(math.isfinite(c) for c in (*components,mass))
+        else:
+            from ._transform import dispatch_owned
+            def check(x,y,z,e,m):
+                invalid=(e<=0)|(m<=0)|~np.isfinite(m)
+                for c in (x,y,z,e):invalid|=~np.isfinite(c)
+                if np.any(invalid):
+                    raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
+                return x,y,z,e,m
+            check.outputs=5
+            dispatch_owned(check,(*components,mass))
+            invalid=False
+        if invalid:
             raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
         if direction==-1 and self is p4:
             return self._new(*(c*0. for c in self._components()[:3]),mass)
-        trusted=all(not is_ak(c) and np.ndim(c)==0 for c in p4._components())
-        return self._new(*reference_boost(self._components(),p4._components(),mass,direction),_trusted_awkward=trusted)
+        trusted=scalar or not any(is_ak(c) for c in (*self._components(),*components))
+        return self._new(*reference_boost(self._components(),components,mass,direction),_trusted_awkward=trusted)
 
     def boost_p4(self,p4):
         """Active boost from a future timelike p4, without converting to beta."""
@@ -653,10 +671,20 @@ class LorentzAPI(SpatialAPI):
         import math
         from ._transform import real_parameter
         gamma=real_parameter(gamma)
-        invalid=(not math.isfinite(gamma) or abs(gamma)<1) if isinstance(gamma,float) else backend_any(~np.isfinite(gamma)|(abs(gamma)<1))
+        if is_ak(gamma):
+            import awkward as ak
+            def check(layout,**kwargs):
+                if layout.is_numpy:
+                    if np.any(~np.isfinite(layout.data)|(abs(layout.data)<1)):
+                        raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
+                    return layout
+            ak.transform(check,gamma)
+            invalid=False
+        else:
+            invalid=(not math.isfinite(gamma) or abs(gamma)<1) if isinstance(gamma,float) else backend_any(~np.isfinite(gamma)|(abs(gamma)<1))
         if invalid:
             raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
-        trusted=isinstance(gamma,float) or (isinstance(gamma,np.ndarray) and gamma.ndim==0)
+        trusted=(not is_ak(gamma) and self._lib=='np') or isinstance(gamma,float) or (isinstance(gamma,np.ndarray) and gamma.ndim==0)
         return self._new(*gamma_axis_boost(self._components(),gamma,axis),_trusted_awkward=trusted)
 
     def boostX(self,beta=None,gamma=None):
