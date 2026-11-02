@@ -11,8 +11,8 @@ LVec also provides two- and three-dimensional spatial vectors.
 
 ## Install
 
-Requires Python ≥3.10 and NumPy ≥2.2.4. Jagged collections additionally require
-Awkward ≥2.7.4.
+Requires Python 3.10 or later and NumPy 2.2.4 or later. Jagged collections
+additionally require Awkward 2.7.4 or later.
 
 ```bash
 python -m pip install lvec
@@ -21,7 +21,7 @@ python -m pip install "lvec[awkward]"  # for jagged event data
 
 ## Reconstruct a two-particle system
 
-Use consistent energy and momentum units, with `c=1` and metric `(+,-,-,-)`.
+Use consistent energy and momentum units, with $c=1$ and metric $(+,-,-,-)$.
 
 ```python
 from lvec import LVec
