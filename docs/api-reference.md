@@ -1,160 +1,80 @@
 # API reference
 
-[Overview](../README.md) · [Physics guide](../user-guide.md) · [Migration](vector-migration.md)
+The dimensional interfaces list every public property, method, alias, and
+coordinate conversion. Scalars, owned NumPy collections, and owned Awkward
+collections use the same numerical interface. Native records expose the
+subset described in [Awkward construction](construction/awkward.md).
 
-All vector classes use owned Cartesian float64 components. Operations apply
-elementwise to scalars, NumPy arrays, and optional Awkward collections.
-The [physics guide](../user-guide.md) defines units, boost signs, signed masses,
-missing-value behavior, and numerical limits.
+## Complete interfaces
 
-This index lists the public names. Use the reference pages for signatures,
-parameters, return values, and physical domains:
-
-- [Constructors and coordinates](reference/constructors.md)
-- [Observables and vector algebra](reference/vectors.md)
-- [Boosts, rotations, and frames](reference/transformations.md)
-- [Arrays, ownership, and caching](reference/arrays.md)
+| Interface | Geometry |
+| --- | --- |
+| [2D vectors](reference/vector2d.md) | Transverse Euclidean vectors; `Vector2D`, `Momentum2D` |
+| [3D vectors](reference/vector3d.md) | Spatial Euclidean vectors; `Vector3D`, `Momentum3D` |
+| [4D vectors](reference/vector4d.md) | Lorentz vectors; `LVec`, `Vector4D`, `Momentum4D` |
+| [Reference frames](reference/frame.md) | Frame velocities and CM factories |
+| [Operators and NumPy](reference/operators.md) | Python operators, reductions, functions, and ufuncs |
+| [Exceptions](reference/exceptions.md) | Shape, input, backend, and dependency errors |
 
 ```{toctree}
 :hidden:
+
+reference/vector2d
+reference/vector3d
+reference/vector4d
+reference/frame
+reference/operators
+reference/exceptions
+```
+
+## Construction and coordinates
+
+Choose [scalar](construction/scalars.md), [NumPy](construction/numpy.md),
+or [Awkward](construction/awkward.md) input. The
+[constructor parameters](reference/constructors.md) define the public factories
+and cache options. The [coordinate guide](guides/coordinates.md) gives the
+mathematical definitions, signed invariant policy, and embedding conventions.
+
+## Observables
+
+The [observable guide](reference/vectors.md) explains masses, rapidity,
+transverse quantities, and physical validation. Individual definitions and
+all aliases appear in the dimensional interfaces above.
+
+## Algebra and geometry
+
+Use the [operator reference](reference/operators.md) for Python and NumPy
+syntax. Geometry methods, direction tests, and angular separations are
+listed individually in each applicable dimensional interface.
+
+## Transformations
+
+The [transformation guide](reference/transformations.md) explains active
+boosts, CM transforms, Euler conventions, quaternions, and decay geometry.
+The [4D interface](reference/vector4d.md) includes every axis-boost spelling
+and the complete frame-conversion signatures.
+
+## Arrays and interchange
+
+See [arrays, ownership, and caching](reference/arrays.md) for shapes,
+reductions, snapshots, native views, and exports. The
+[NumPy tutorial](tutorials/numpy.md) demonstrates regular collections;
+[particle combinations](tutorials/particle-combinations.md) demonstrates
+native Awkward records inside event structures.
+
+## Cache options and errors
+
+Cache options are part of the [constructors](reference/constructors.md).
+[Cache controls](reference/arrays.md#property-caches) describe lifetimes,
+retained entries, counters, and invalidation. The [exception reference](reference/exceptions.md)
+and [numerical guide](guides/numerics.md) define failure modes and physical domains.
+
+```{toctree}
+:hidden:
+:caption: Topic guides
 
 reference/constructors
 reference/vectors
 reference/transformations
 reference/arrays
 ```
-
-## Construction and coordinates
-
-| Interface | Use |
-| --- | --- |
-| `LVec(px, py, pz, E, ...)` | Four-momentum; `Vector4D` and `Momentum4D` are aliases |
-| `Vector2D(x, y)`, `Vector3D(x, y, z)` | Spatial vectors; also `Momentum2D`, `Momentum3D` |
-| `obj(**coordinates)` | Select dimension and coordinate family from keywords |
-| `array(columns)` / `arr` | Owned collection from a coordinate mapping or structured NumPy array |
-| `zip(columns, depth_limit=None)` | Owned collection with explicit Awkward broadcasting |
-| `Array(records)` / `awk` | Owned collection from coordinate records |
-| `LVec.from_p4(px, py, pz, E)` | Cartesian constructor |
-| `LVec.from_ptepm(pt, eta, phi, m)` | Legacy transverse-coordinate constructor |
-| `LVec.from_ary(mapping)`, `LVec.from_vec(obj)` | Import four named components |
-| `from_ak_record(records)` | Import applicable coordinate components; extra fields are ignored |
-
-Coordinate factories combine `(x,y)` or `(rho,phi)`, optionally one of
-`z`/`theta`/`eta`, then `t`/`tau` for 4D. Momentum synonyms are `px`, `py`, `pt`,
-`pz`, `pseudorapidity`, `E`/`e`/`energy`, and `mass`/`m`/`M`. These give
-2 planar, 6 spatial, and 12 Lorentz coordinate families. Constructors reject
-complex and nonnumeric components.
-
-Classes also expose `from_coordinates(**coordinates)` and named factories such
-as `Vector3D.from_rhophieta(...)` and `LVec.from_xyztau(...)`.
-
-## Observables
-
-Properties are available in applicable dimensions; aliases share calculations.
-
-| Quantity | Names |
-| --- | --- |
-| Cartesian | `x`, `y`, `z`, `t`; momentum aliases `px`, `py`, `pz`, `E`, `e`, `energy` |
-| Transverse | `rho`, `rho2`, `pt`, `pt2`, `phi` |
-| Spatial | `mag`, `mag2`, `p`, `p2`, `theta`, `eta`, `pseudorapidity`, `costheta`, `cottheta` |
-| Signed invariant | `tau`, `tau2`, `mass`, `mass2`, `m`, `m2`, `M`, `M2` |
-| Kinematic | `beta`, `gamma`, `rapidity` |
-| Transverse energy | `Et`, `Et2`, `et`, `et2`, `transverse_energy`, `transverse_energy2` |
-| Transverse mass | `Mt`, `Mt2`, `mt`, `mt2`, `transverse_mass`, `transverse_mass2` |
-| Temporal square | `t2`, `E2`, `e2`, `energy2` |
-
-`Vector2D.r` is the planar magnitude; `Vector3D.r` is the full spatial magnitude.
-
-## Algebra and geometry
-
-| Operation | Interface |
-| --- | --- |
-| Arithmetic | `+`, `-`, scalar `*` and `/`; `add`, `subtract`, `scale` |
-| Scalar product | `dot(q)`, `p @ q`; Minkowski in 4D, Euclidean in 2D/3D |
-| Norm and normalization | `abs(p)` gives signed mass in 4D and Euclidean magnitude in 2D/3D; `unit()` |
-| Partial scaling | `scale2D`, `scale3D`, `scale4D` with a factor; `neg2D`, `neg3D`, `neg4D` |
-| Equality | `==`, `!=`, `equal(q)`, `not_equal(q)`; one mask entry per vector |
-| Approximate equality | `isclose(q, rtol=1e-5, atol=1e-8, equal_nan=False)`, `allclose(...)` |
-| Spatial products and angles | `cross(q)` returns a 3D vector; `deltaangle(q)`, `opening_angle(q)` on LVec |
-| Angular separation | `delta_phi` / `deltaphi`, `deltaeta`, `delta_r` / `deltaR`, `delta_r2` / `deltaR2` |
-| Rapidity separation | LVec `delta_r(q, rapidity=True)`, `deltaRapidityPhi(q)`, and squared counterparts |
-| Direction tests | `is_parallel`, `is_antiparallel`, `is_perpendicular` with `tolerance=1e-5` on direction cosine |
-| Causal tests | `is_timelike(tolerance=0)`, `is_spacelike(tolerance=0)`, `is_lightlike(tolerance=1e-5)`; tolerance has invariant-squared units |
-| Particle tests | LVec `is_physical(rtol=1e-12, atol=0)`, `validate_particle(...)` |
-
-Binary algebra and equality require the same dimension. Spatial geometry may
-use the spatial part of a 4D vector. Project explicitly with `to_2D()`,
-`to_3D()`, `to_4D(**coordinates)`, or `like(other)`.
-
-Named `to_<coordinates>` methods mirror the coordinate families, including
-momentum spellings such as `to_ptphietamass()`. Storage remains Cartesian.
-Dimension-only embeddings add Cartesian zeros; named embeddings add zero in
-the requested coordinate. Thus `to_4D()` adds $t=0$, while `to_xyztau()` adds
-$\tau=0$; `to_3D(z=0)` specifies a planar embedding unambiguously.
-
-## Transformations
-
-| Operation | Interface |
-| --- | --- |
-| Axis rotation | `rotateX(angle)`, `rotateY(angle)`, `rotateZ(angle)`; aliases `rotx`, `roty`, `rotz` |
-| General rotation | `rotate_axis(axis, angle)`, `rotate_euler(phi, theta, psi, order='zxz')` |
-| Other conventions | `rotate_nautical(yaw, pitch, roll)`, `rotate_quaternion(u, i, j, k)` |
-| Matrix transform | `transform2D`, `transform3D`, `transform4D` with mappings keyed `xx`, `xy`, … or arrays shaped $(\ldots,n,n)$ |
-| Active $\boldsymbol\beta$ boost | `boost(bx, by, bz)`, `boost_beta3(beta3)`, `boostz(beta)` |
-| Active reference boost | `boost_p4(p4)`, or `boost(booster)` dispatching a 3D velocity / 4D momentum |
-| Axis boost | `boostX`, `boostY`, `boostZ` with `beta=...` or `gamma=...`; exactly one parameter |
-| CM boost | `boostCM_of_beta3`, `boostCM_of_p4`, `boostCM_of`; `boost_to_rest(reference=None)` |
-| Velocity vector | `to_beta3()` |
-| Named frame | `to_frame(frame)`, `transform_frame(source, target)` |
-| Decay geometry | `helicity_angle(parent, reference)` |
-
-`Frame(bx, by, bz, name=None)` accepts scalar or array velocities.
-`Frame.rest()`, `Frame.from_lvec(total)`, and `Frame.center_of_mass(vectors)`
-construct common frames. Parameters are `beta_x`, `beta_y`, `beta_z`, and `gamma`.
-See [frame and angle conventions](../user-guide.md#boosts-and-reference-frames).
-`rotate(angle, axis='z')` selects an axis in 3D/4D; 2D uses `rotate(angle)`.
-
-## Arrays and interchange
-
-Indexing and masks select complete vectors. `sum(axis=None, keepdims=False)`
-combines components; `shape`, `ndim`, and `reshape` describe regular arrays.
-NumPy supports `sum`, `count_nonzero`, `stack`, `concatenate`, `broadcast_arrays`,
-`reshape`, `isclose`/`allclose`, arithmetic, absolute, powers, roots, and matmul.
-Writable ufunc `out` and reduction `dtype`, `out`, `initial`, `where` are unsupported.
-
-| Conversion | Result |
-| --- | --- |
-| `to_p4()`, `to_ptepm()` | LVec tuples `(px,py,pz,E)` and `(pt,eta,phi,mass)` |
-| `to_numpy()` | Independent structured NumPy export for regular, complete data |
-| `to_np()`, `to_ak()` | LVec component dictionaries in the requested backend |
-| `to_ak_record(with_behavior=False)` | Plain coordinate records; `True` attaches local vector behavior |
-| `to_root_dict()` | LVec NumPy components keyed `fX`, `fY`, `fZ`, `fE` for external I/O tools |
-
-Awkward functions such as `ak.sum`, `ak.count`, `ak.count_nonzero`,
-`ak.concatenate`, and `ak.cartesian` work through named vector records.
-`lvec.awkward.Array` and `lvec.awkward.zip` return native views without property
-caches; coordinate/dtype conversions can allocate. Owned `lvec.Array` and
-`lvec.zip` snapshot inputs. Call `lvec.register_awkward()` to restore behavior
-for serialized `LVec2D`, `LVec3D`, or `LVec4D` records.
-
-## Cache options and errors
-
-`LVec`, `from_p4`, and `from_ptepm` accept `max_cache_size=None`,
-`default_ttl=None`, `validate=False`, `cache_intermediates=False`, and
-`cache_stats=True`. Spatial constructors accept the two `cache_*` options.
-
-`max_cache_size` counts derived-property entries: `None` is unlimited; `0`
-disables retention. Bounded caches evict least recently used entries. TTLs are
-seconds on a monotonic clock; `set_ttl(name, None)` disables expiration.
-`cache_intermediates=True` retains additional arrays. Fresh arithmetic results
-use default cache settings. Cached numerical arrays are read-only.
-
-| Controls | Availability |
-| --- | --- |
-| `clear_cache()`, `cache_stats`, `cache_hit_ratio`, `reset_cache_stats()` | All vector classes |
-| `set_ttl(name, seconds)`, `clear_expired()`, `cache_size` | LVec |
-| `touch()` | Invalidates dependent entries; does not authorize component mutation |
-
-Shape mismatches raise `lvec.ShapeError`. `InputError`, `BackendError`, and
-`DependencyError` are defined in `lvec.exceptions`. Invalid transformations
-can raise `ValueError`; unsupported operations raise `TypeError`.
