@@ -188,6 +188,10 @@ def transform(values, matrix, dimension):
         coefficients=[matrix[...,i,j] for i in range(dimension) for j in range(dimension)]
     if all(isinstance(c,float) or (isinstance(c,np.ndarray) and c.ndim==0) for c in coefficients):
         return _constant_transform(values,tuple(float(c) for c in coefficients),dimension),True
+    single_product_rows=all(
+        sum(not ((isinstance(c,float) or (not is_ak(c) and np.ndim(c)==0)) and float(c)==0.)
+            for c in coefficients[i*dimension:(i+1)*dimension])<=1
+        for i in range(dimension))
     count=len(values)
     def short(coords,coeffs):
         shape=coords[0].shape
@@ -258,7 +262,9 @@ def transform(values, matrix, dimension):
         return tuple(out)+tuple(coords[dimension:])
     def kernel(*arrays):
         shape=arrays[0].shape
-        if arrays[0].size<=32768:return evaluate(*arrays)
+        # Diagonal rows already need only one correctly rounded product.
+        # Blocking them would add copies without reducing temporary storage.
+        if arrays[0].size<=131072 or single_product_rows:return evaluate(*arrays)
         flat=tuple(a.reshape(-1) for a in arrays)
         outputs=tuple(np.empty(shape,dtype=np.float64) for _ in range(dimension))
         targets=tuple(a.reshape(-1) for a in outputs)
