@@ -7,6 +7,23 @@ elementwise to scalars, NumPy arrays, and optional Awkward collections.
 The [physics guide](../user-guide.md) defines units, boost signs, signed masses,
 missing-value behavior, and numerical limits.
 
+This index lists the public names. Use the reference pages for signatures,
+parameters, return values, and physical domains:
+
+- [Constructors and coordinates](reference/constructors.md)
+- [Observables and vector algebra](reference/vectors.md)
+- [Boosts, rotations, and frames](reference/transformations.md)
+- [Arrays, ownership, and caching](reference/arrays.md)
+
+```{toctree}
+:hidden:
+
+reference/constructors
+reference/vectors
+reference/transformations
+reference/arrays
+```
+
 ## Construction and coordinates
 
 | Interface | Use |

@@ -90,6 +90,28 @@ from `examples` first. That fixture demonstrates I/O and is not an
 energy-conserving decay model. `08_lhcb_data.py` may download data and write
 plots; check the input units before using it for analysis.
 
+## Documentation
+
+Use Python 3.11 or later to build the manual:
+
+```bash
+python -m pip install -e ".[docs,awkward]"
+python -m sphinx -b html -n -W --keep-going docs docs/_build/html
+python -m sphinx -b doctest -W --keep-going docs docs/_build/doctest
+python docs/check.py docs/_build/html
+```
+
+Open `docs/_build/html/index.html` to review the result. The HTML build checks
+cross-references; doctests verify tutorial outputs, and `docs/check.py` checks
+links, executable Python examples, and documented API signatures. Write
+mathematics in LaTeX using `$...$` or `$$...$$`; avoid `\operatorname`.
+
+Tutorials teach complete physics tasks. Reference pages give signatures,
+parameters, returns, and domains. `docs/conf.py` includes `user-guide.md`,
+`benchmarks/README.md`, and this file as manual pages without duplicating them.
+The documentation workflow validates pull requests and deploys `main` to
+GitHub Pages after its build and example checks pass.
+
 ## Workflow dependencies and releases
 
 [Sanad](https://github.com/MohamedElashri/sanad) manages
