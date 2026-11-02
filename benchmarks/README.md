@@ -55,32 +55,6 @@ Setup and validation are outside timing. Cold cases include cache clearing;
 fixed seed. A separate worker measures incremental traced allocations,
 including live outputs. These are allocation measurements, not process RSS.
 
-## Changes from the merged baseline
-
-The table compares `6af876f` with `3cd0fdb` in three alternating rounds:
-baseline/final, final/baseline, baseline/final. Each run uses one fresh process,
-seven samples, the same framework, and 100,000-particle/event inputs.
-For call medians $\tilde t$, the reported ratio is
-
-$$
-r=\mathrm{median}_{i=1,2,3}\left(\frac{\tilde t_{\mathrm{final},i}}{\tilde t_{\mathrm{baseline},i}}\right).
-$$
-
-Values $r<1$ indicate a shorter call time.
-
-| Workload | NumPy ratio | Jagged ratio |
-| --- | ---: | ---: |
-| $\gamma$ boost, per-particle parameters | $0.654$ | $0.417$ |
-| Boost from a shared reference | $0.284$ | $0.272$ |
-| Boost from per-particle references | $0.439$ | $0.327$ |
-| Quaternion rotation, per-particle parameters | $0.700$ | $0.266$ |
-| Diagonal matrix, per-particle coefficients | $1.021$ | $0.881$ |
-| Add, boost, calculate mass | $1.077$ | $0.967$ |
-| vector workflow control | $1.032$ | $1.004$ |
-
-Boost and quaternion improvements repeat across rounds. Smaller differences
-in workflows and controls vary between rounds and remain inconclusive.
-
 ## Reproduction
 
 Use Python 3.13.12 and a clean checkout of the measured revision:
