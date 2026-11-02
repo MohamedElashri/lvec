@@ -16,12 +16,37 @@ Awkward 2.7.4 or later. No ROOT installation is required.
 
 ## Start with an analysis
 
+- [Scalar vectors](tutorials/scalars.md): spatial algebra, signed norms,
+  rotations, and explicit dimensional embeddings.
+- [NumPy collections](tutorials/numpy.md): regular shapes, broadcasting,
+  event reductions, indexing, and exports.
 - [Reconstruct a particle pair](tutorials/first-analysis.md): construct momenta,
   select particles, and calculate an invariant mass.
 - [Analyze jagged events](tutorials/jagged-events.md): apply particle selections,
   reduce events, and handle missing data.
 - [Work in a rest frame](tutorials/rest-frames.md): transform daughter momenta
   and calculate a decay angle.
+- [Particle combinations](tutorials/particle-combinations.md): form candidates
+  inside events using native Awkward records.
+
+## Coordinates and supported data
+
+Input coordinates combine a transverse pair (`x`, `y` or `rho`, `phi`), a
+longitudinal coordinate (`z`, `theta`, or `eta`), and for 4D a temporal
+coordinate (`t` or signed `tau`). Momentum aliases include `pt`, `pz`, `E`,
+and `mass`. These give two planar, six spatial, and twelve Lorentz coordinate
+families; storage remains Cartesian.
+
+| Data | Construction guide | Ownership |
+| --- | --- | --- |
+| Single vectors | [Scalar construction](construction/scalars.md) | Owned values |
+| Regular arrays | [NumPy construction](construction/numpy.md) | Immutable snapshots with property caches |
+| Jagged arrays | [Awkward construction](construction/awkward.md) | Owned collections or native views |
+
+The [coordinate guide](guides/coordinates.md) defines the mathematical
+representations. Every property and method is listed in the
+[2D](reference/vector2d.md), [3D](reference/vector3d.md), and
+[4D](reference/vector4d.md) interfaces, with momentum aliases on the same classes.
 
 ## Conventions and reference
 
@@ -38,9 +63,21 @@ Measured performance and reproduction instructions are in [benchmarks](benchmark
 :hidden:
 :caption: Tutorials
 
-tutorials/first-analysis
+tutorials/scalars
+tutorials/numpy
 tutorials/jagged-events
+tutorials/first-analysis
+tutorials/particle-combinations
 tutorials/rest-frames
+```
+
+```{toctree}
+:hidden:
+:caption: Construction
+
+construction/scalars
+construction/numpy
+construction/awkward
 ```
 
 ```{toctree}
@@ -48,6 +85,8 @@ tutorials/rest-frames
 :caption: User guide
 
 physics
+guides/coordinates
+guides/numerics
 vector-migration
 benchmarks
 ```

@@ -46,9 +46,9 @@ physics conventions, and API reference pages. Sources can also be read here:
 
 | Start here | Contents |
 | --- | --- |
-| [Tutorials](docs/tutorials/first-analysis.md) | Pair reconstruction, jagged events, and rest-frame calculations |
+| [Tutorials](docs/tutorials/scalars.md) | Scalars, NumPy arrays, jagged events, particle combinations, and rest frames |
 | [Physics guide](user-guide.md) | Coordinates, invariant mass, event selections, rest frames, decay angles, and numerical conventions |
-| [API reference](docs/api-reference.md) | Signatures, parameters, observables, transformations, array operations, and cache options |
+| [API reference](docs/api-reference.md) | Complete 2D, 3D, 4D, and frame interfaces, including aliases and coordinate conversions |
 | [Migrating from vector](docs/vector-migration.md) | Familiar interfaces and scientific differences to check |
 | [Benchmarks](benchmarks/README.md) | Representative measurements, ownership boundaries, and reproduction |
 | [Contributing](CONTRIBUTING.md) | Testing, numerical bug reports, and releases |

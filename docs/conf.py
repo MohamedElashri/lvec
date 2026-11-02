@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_REF = os.environ.get("DOCS_SOURCE_REF", "main")
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "docs"))
+from _api import CLASSES, render as render_api
 project = "LVec"
 author = "Mohamed Elashri"
 copyright = "2026, Mohamed Elashri"
@@ -23,6 +25,7 @@ extensions = ["myst_parser", "sphinx.ext.doctest", "sphinx.ext.mathjax"]
 myst_enable_extensions = ["dollarmath", "fieldlist"]
 myst_heading_anchors = 6
 nitpicky = True
+toc_object_entries_show_parents = "hide"
 exclude_patterns = ["_build", "check.py"]
 html_theme = "furo"
 html_title = f"LVec {release}"
@@ -67,12 +70,21 @@ def manual_links(app, docname, source):
         return f"](https://github.com/MohamedElashri/lvec/{kind}/{SOURCE_REF}/{relative}{anchor})"
 
     content = path.read_text() if docname in SHARED else source[0]
+    if docname in CLASSES:
+        app.env.note_dependency(str(ROOT / "docs/_api.py"))
+        for module in (ROOT / "lvec").glob("*.py"):
+            app.env.note_dependency(str(module))
+        for topic in (ROOT / "docs/reference").glob("*.md"):
+            if topic.stem not in ("vector2d", "vector3d", "vector4d", "frame"):
+                app.env.note_dependency(str(topic))
+        content = render_api(ROOT, docname, content)
     source[0] = re.sub(r"\]\(([^\s)]+)\)", link, content)
 
 
 def canonical_source(app, pagename, templatename, context, doctree):
-    if pagename in SHARED:
-        path = SHARED[pagename].relative_to(ROOT).as_posix()
+    if pagename in SHARED or pagename in CLASSES:
+        path = (SHARED[pagename].relative_to(ROOT).as_posix()
+                if pagename in SHARED else "docs/_api.py")
         base = "https://github.com/MohamedElashri/lvec"
         context["theme_source_view_link"] = f"{base}/blob/{SOURCE_REF}/{path}?plain=true"
         context["theme_source_edit_link"] = f"{base}/edit/{SOURCE_REF}/{path}"
