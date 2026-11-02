@@ -16,6 +16,7 @@ non-scalar components must have matching shapes and missing positions.
 ## Cartesian vectors
 
 ```{py:class} lvec.LVec(px, py, pz, E, max_cache_size=None, default_ttl=None, *, validate=False, cache_intermediates=False, cache_stats=True)
+:no-index:
 Construct four-momenta in component order $(p_x,p_y,p_z,E)$.
 
 :param px: Transverse momentum along $x$.
@@ -35,10 +36,12 @@ constructor takes energy last. `LVec.from_p4` accepts the same components and
 cache options. For general coordinate factories, use `obj` below.
 
 ```{py:class} lvec.Vector2D(x, y, *, cache_intermediates=False, cache_stats=True)
+:no-index:
 Construct a spatial vector in the transverse plane. `Momentum2D` is an alias.
 ```
 
 ```{py:class} lvec.Vector3D(x, y, z, *, cache_intermediates=False, cache_stats=True)
+:no-index:
 Construct a spatial three-vector. `Momentum3D` is an alias.
 ```
 
