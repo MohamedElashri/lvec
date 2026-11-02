@@ -38,7 +38,15 @@ True
 ```
 
 Each class also has named factories such as `from_rhophi`, `from_rhophieta`,
-and `from_xyztau`. Their arguments follow the coordinate order in the name.
+and `from_xyztau`. Their positional-only arguments follow the coordinate order
+in the name. Use `from_coordinates` or `obj` for keyword construction.
+
+```{doctest}
+>>> spatial_factory = lvec.Vector3D.from_rhophieta(2., .4, .3)
+>>> spatial_factory.allclose(lvec.obj(rho=2., phi=.4, eta=.3))
+True
+```
+
 All names are listed under construction in the dimensional references.
 
 Use a Cartesian temporal component to supply negative energy. Mass-based

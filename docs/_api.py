@@ -131,12 +131,17 @@ def public_members(cls):
 
 
 def signature(cls, name):
+    sig = inspect.signature(getattr(cls, name))
     if name.startswith('from_') and name[5:] in FAMILIES:
         fields = FAMILIES[name[5:]][1]
-        return '(' + ', '.join(fields) + ')'
+        assert sig.parameters['_fields'].default == fields, (cls, name, sig)
+        assert any(p.kind == p.VAR_POSITIONAL for p in sig.parameters.values()), (cls, name, sig)
+        return '(' + ', '.join(fields) + ', /)'
     if name.startswith('to_') and name[3:] in FAMILIES:
+        dimension, fields = FAMILIES[name[3:]]
+        assert sig.parameters['_fields'].default == fields, (cls, name, sig)
+        assert sig.parameters['_dimension'].default == dimension, (cls, name, sig)
         return '()'
-    sig = inspect.signature(getattr(cls, name))
     params = list(sig.parameters.values())
     if params and params[0].name in ('self','cls'):
         params.pop(0)
@@ -151,7 +156,7 @@ def description(root, cls, name, entries):
             target, fields = FAMILIES[suffix]
             names = ', '.join(f'`{f}`' for f in fields)
             if prefix == 'from':
-                return f'Construct an owned {target}D vector from {names}, in this order. Coordinate definitions and domains are given in the [coordinate guide](../guides/coordinates.md). Storage is Cartesian.'
+                return f'Construct an owned {target}D vector from positional-only coordinates {names}, in this order. Coordinate definitions and domains are given in the [coordinate guide](../guides/coordinates.md). Storage is Cartesian.'
             added = fields[dim:]
             text = f'Return an owned {target}D vector for coordinate family {names}. Storage remains Cartesian. '
             if target < dim:
