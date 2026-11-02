@@ -204,7 +204,7 @@ def transform(values, matrix, dimension):
         coords=tuple(np.asarray(c) for c in values)
         if coords[0].size<=8 and all(isinstance(c,float) or c.ndim==0 or c.shape==coords[0].shape for c in coefficients):
             return short(coords,coefficients),True
-    def kernel(*arrays):
+    def evaluate(*arrays):
         coords=arrays[:count];coeffs=arrays[count:]
         if coords[0].size<=8:return short(coords,coeffs)
         out=[]
@@ -226,7 +226,11 @@ def transform(values, matrix, dimension):
                     else:value=np.zeros_like(coords[0])
                     out.append(value)
                     continue
-                value=np.asarray(sum((a*b for a,b in active),np.zeros_like(coords[0])))
+                value=np.zeros_like(coords[0])
+                scratch=np.empty_like(value)
+                for a,b in active:
+                    np.multiply(a,b,out=scratch)
+                    np.add(value,scratch,out=value)
                 absolute=abs(value)
                 bound=sum(a*b for a,b in zip(bounds,coefficient_bounds[i*dimension:(i+1)*dimension]))
                 threshold=np.sqrt(np.finfo(float).eps)*bound
@@ -252,6 +256,17 @@ def transform(values, matrix, dimension):
                     value.flat[np.flatnonzero(coarse)[risk]]=accurate_result(tuple(left+right),'np',dot=True)
                 out.append(value)
         return tuple(out)+tuple(coords[dimension:])
+    def kernel(*arrays):
+        shape=arrays[0].shape
+        if arrays[0].size<=32768:return evaluate(*arrays)
+        flat=tuple(a.reshape(-1) for a in arrays)
+        outputs=tuple(np.empty(shape,dtype=np.float64) for _ in range(dimension))
+        targets=tuple(a.reshape(-1) for a in outputs)
+        for start in range(0,arrays[0].size,32768):
+            stop=min(start+32768,arrays[0].size)
+            result=evaluate(*(a[start:stop] for a in flat))
+            for target,value in zip(targets,result):target[start:stop]=value
+        return outputs+tuple(arrays[dimension:count])
     kernel.outputs=count
     scalar=all(not is_ak(c) and np.ndim(c)==0 for c in coefficients)
     return dispatch_parameters(kernel,values,coefficients),scalar or not any(is_ak(c) for c in (*values,*coefficients))
