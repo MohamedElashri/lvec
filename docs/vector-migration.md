@@ -19,10 +19,10 @@ np.testing.assert_allclose(rest.p, 0., atol=1e-14)
 | Existing pattern | LVec |
 | --- | --- |
 | `vector.obj(**coordinates)` | `lvec.obj(**coordinates)` |
-| `vector.array(columns)` | `lvec.array(columns)` → owned collection |
-| `vector.zip(columns)` | `lvec.zip(columns)` → owned collection |
+| `vector.array(columns)` | `lvec.array(columns)` returns an owned collection |
+| `vector.zip(columns)` | `lvec.zip(columns)` returns an owned collection |
 | Native Awkward vector records | `lvec.awkward.zip` / `Array`, or `to_ak_record(with_behavior=True)` |
-| Existing four-vector records | `LVec.from_ak_record(records)` → owned snapshot |
+| Existing four-vector records | `LVec.from_ak_record(records)` returns an owned snapshot |
 | Coordinate changes and projections | `to_<coordinates>()`, `to_2D/3D/4D()` |
 | Algebra, rotations, boosts, angular distances | Familiar method names; see the [API tables](api-reference.md) |
 
@@ -40,11 +40,11 @@ Choose the boundary that matches how your analysis uses and mutates its inputs.
   subclasses. Use components for unsupported ndarray operations. Components
   are immutable; writable `out` and extra NumPy reduction options are unsupported.
 - **Physics conventions.** Check the [physical domains](../user-guide.md#physical-domains-and-numerical-accuracy),
-  especially nonpositive energy, spacelike gamma, zero vectors, signed mass,
-  and physical boost-reference requirements. At zero causal tolerance, exact
-  null vectors are classified as lightlike.
+  especially nonpositive energy, undefined $\gamma$ for spacelike momenta,
+  zero vectors, signed mass, and physical boost-reference requirements.
+  At zero causal tolerance, exact null vectors are classified as lightlike.
 - **Dimensions.** Mixed-dimension algebra requires explicit projection or
-  embedding. Adding `t=0` differs from adding `tau=0`.
+  embedding. Adding $t=0$ differs from adding $\tau=0$.
 - **Scope.** Numba registration, symbolic SymPy, PyTrees, coordinate dispatch
   containers, and mutable ndarray-subclass behavior are outside this API.
 

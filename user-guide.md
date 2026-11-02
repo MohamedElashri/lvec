@@ -65,8 +65,8 @@ print(f"Pair mass: {parent.mass:.3f}")  # Pair mass: 2.481
 | --- | --- |
 | `pt`, `p` | Transverse and spatial momentum magnitudes |
 | `mass2` | Signed $p^2$, without clipping |
-| `mass` | $\operatorname{sgn}(p^2)\sqrt{\lvert p^2\rvert}$ |
-| `eta` | Pseudorapidity $\operatorname{asinh}(p_z/p_T)$ |
+| `mass` | $\mathrm{sgn}(p^2)\sqrt{\lvert p^2\rvert}$ |
+| `eta` | Pseudorapidity $\mathrm{arsinh}(p_z/p_T)$ |
 | `rapidity` | Longitudinal rapidity $y=\frac12\log[(E+p_z)/(E-p_z)]$ for physical momenta |
 | `dot(q)` or `p @ q` | Minkowski product $E_pE_q-\boldsymbol p\cdot\boldsymbol q$ |
 | `Et`, `Mt2` | $E\sin\theta$ and $E^2-p_z^2$; `Mt` is the signed square root |
@@ -74,7 +74,7 @@ print(f"Pair mass: {parent.mass:.3f}")  # Pair mass: 2.481
 `Mt` is a single-vector transverse mass, not the two-object missing-energy
 transverse mass used in some collider analyses.
 
-`delta_phi(q)` is signed `self.phi - q.phi`, wrapped to `[-pi, pi)`.
+`delta_phi(q)` is signed $\phi_{\mathrm{self}}-\phi_q$, wrapped to $[-\pi,\pi)$.
 `delta_r2(q)` calculates $(\Delta\eta)^2+(\Delta\phi)^2$; use the squared
 distance for matching cuts. `delta_r(q, rapidity=True)` substitutes rapidity,
 whose separation is invariant under a common longitudinal boost of physical
@@ -136,13 +136,15 @@ print(f"CM momentum: {parent.to_frame(cm).p:.3f}")  # CM momentum: 0.000
 
 A `Frame` stores velocity relative to the lab. `to_frame(frame)` assumes lab
 input and applies the **negative** frame velocity. `transform_frame(source,
-target)` applies `+beta_source`, then `-beta_target`, defining a sequence of
+target)` applies $+\boldsymbol\beta_{\mathrm{source}}$, then
+$-\boldsymbol\beta_{\mathrm{target}}$, defining a sequence of
 canonical boosts; non-collinear boosts can include a spatial rotation.
 
-Use `boost_p4(reference)` or `boostX(gamma=...)` when momentum or gamma is
+Use `boost_p4(reference)` or `boostX(gamma=...)` when momentum or $\gamma$ is
 already available, avoiding conversion of an ultrarelativistic reference to
-beta. Beta inputs must be finite with $\beta^2<1$; signed gamma requires
-$\lvert\gamma\rvert\ge1$, with its sign selecting the boost direction.
+$\boldsymbol\beta$. Velocity inputs must be finite with $\beta^2<1$;
+signed $\gamma$ requires $\lvert\gamma\rvert\ge1$, with its sign selecting
+the boost direction.
 
 ## Rotations and decay angles
 
@@ -169,32 +171,33 @@ print(f"Helicity angle: {theta:.3f} rad")  # Helicity angle: 0.524 rad
 ```
 
 Supply all three vectors in the same input frame. The helicity angle is in
-`[0, pi]` and invariant under a common Lorentz transformation. `opening_angle(q)`
+$[0,\pi]$ and invariant under a common Lorentz transformation. `opening_angle(q)`
 is the spatial angle in the current frame; a zero direction gives NaN.
 
 ## Physical domains and numerical accuracy
 
 General four-vectors may be spacelike or have negative energy. For particle
 data, `LVec(..., validate=True)` or `validate_particle(rtol=1e-12, atol=0.)`
-requires finite components, `E >= 0`, and nonnegative invariant within tolerance.
-Relative tolerance scales with `max(E², |p|²)`; absolute tolerance has units of
-energy squared. `is_physical(...)` returns a mask. Validation preserves the raw
+requires finite components, $E\ge0$, and nonnegative invariant within tolerance.
+Relative tolerance scales with $\max(E^2,\lvert\boldsymbol p\rvert^2)$;
+absolute tolerance has units of energy squared. `is_physical(...)` returns a
+mask. Validation preserves the raw
 invariant; use zero tolerances for strict classification. Missing entries are
 excluded from aggregate validation.
 
 Negative `mass`/`tau` in coordinate factories denotes a spacelike signed
 invariant. The legacy `LVec.from_ptepm(..., m=...)` squares its mass argument;
-`validate=True` rejects negative pt or mass there.
+`validate=True` rejects negative $p_T$ or mass there.
 
 | Limit | Result |
 | --- | --- |
-| Zero spatial momentum | `eta = 0`; opening/helicity angles with a zero direction are NaN |
+| Zero spatial momentum | $\eta=0$; opening/helicity angles with a zero direction are NaN |
 | Nonzero beam-axis momentum | `eta` is signed infinity |
 | Zero four-vector | `beta`, `gamma`, and `rapidity` are NaN |
-| Positive-energy lightlike vector | `gamma` is infinity; beam-axis rapidity is signed infinity |
+| Positive-energy lightlike vector | $\gamma=\infty$; beam-axis rapidity is signed infinity |
 | Spacelike vector | Signed negative mass; `gamma` is NaN and `beta` may exceed one |
 | Nonpositive energy | `beta` and `gamma` are NaN |
-| `abs(pz) > abs(E)` | `rapidity` is NaN |
+| $\lvert p_z\rvert>\lvert E\rvert$ | `rapidity` is NaN |
 | Zero / nonzero null vector normalization | Zero remains zero; a nonzero null four-vector has no finite unit normalization |
 
 Calculations use float64. Scaled magnitudes, compensated or exact accumulation,
