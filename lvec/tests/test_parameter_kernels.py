@@ -230,3 +230,15 @@ def test_gamma_validation_ignores_hidden_invalid_values(layout):
     expected=np.array([1.2,1.3])*3+np.sqrt(np.array([1.2,1.3])**2-1)
     np.testing.assert_allclose(ak.to_numpy(ak.flatten(result.E,axis=None)),expected,rtol=2e-14)
     assert data.flags.writeable
+    reference=LVec(gamma,0.,0.,4.)
+    boosted=LVec(1.,0.,0.,3.).boost_p4(reference)
+    assert ak.to_list(ak.ones_like(boosted.E))==ak.to_list(ak.ones_like(gamma))
+    np.testing.assert_allclose(ak.to_numpy(ak.flatten(boosted.mass2,axis=None)),8.,rtol=2e-14,atol=2e-14)
+
+
+@pytest.mark.parametrize('data',[[],[None],[[]],[[None],[],None]])
+def test_gamma_parameters_without_visible_values(data):
+    ak=pytest.importorskip('awkward')
+    gamma=ak.Array(data)
+    result=LVec(1.,0.,0.,3.).boostX(gamma=gamma)
+    assert ak.to_list(ak.ones_like(result.E))==ak.to_list(ak.ones_like(gamma))
