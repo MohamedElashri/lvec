@@ -71,7 +71,7 @@ For a targeted physics check, run:
 
 ```bash
 python -m pytest lvec/tests/test_physics_regressions.py \
-  lvec/tests/test_stress_physics.py lvec/tests/test_postmerge_regressions.py \
+  lvec/tests/test_stress_physics.py lvec/tests/test_parameter_kernels.py \
   -W error::RuntimeWarning
 ```
 
