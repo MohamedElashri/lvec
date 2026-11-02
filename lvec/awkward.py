@@ -20,6 +20,11 @@ class _TransientCache:
 
 
 class _Borrowed:
+    def _new_matching(self,*components,_trusted_awkward=False):
+        if all(isinstance(c,ak.Array) for c in components):
+            return _borrowed(type(self),components,'ak')
+        return self._new(*components)
+
     def _new(self,*components,_trusted_awkward=False):
         # The result is immediately wrapped as native records. Preserve their
         # view semantics instead of round-tripping through owned snapshots.
