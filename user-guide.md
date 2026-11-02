@@ -2,6 +2,10 @@
 
 [Overview](README.md) · [API reference](docs/api-reference.md) · [Migration](docs/vector-migration.md)
 
+[Momenta](#constructing-particle-momenta) · [Mass and selections](#invariant-mass-and-selections) ·
+[Events](#jagged-events-and-reductions) · [Frames](#boosts-and-reference-frames) ·
+[Decay angles](#rotations-and-decay-angles) · [Physical domains](#physical-domains-and-numerical-accuracy)
+
 LVec uses natural units with $c=1$, Cartesian four-momenta
 
 $$
@@ -13,8 +17,8 @@ Choose one consistent unit for momentum, energy, and mass; angles are radians.
 
 ## Constructing particle momenta
 
-Use Cartesian components directly, or specify transverse momentum,
-pseudorapidity, azimuth, and mass:
+Use `LVec` for Cartesian components and `obj` for other coordinates, such as
+transverse momentum, pseudorapidity, azimuth, and mass; both accept scalars and arrays:
 
 ```python
 import numpy as np
@@ -25,7 +29,7 @@ tracks = lvec.obj(
     pt=np.array([2., 3.]), eta=np.array([.2, -.3]),
     phi=np.array([.4, -.5]), mass=.13957,
 )
-np.testing.assert_allclose(tracks.mass, .13957)
+print(np.round(tracks.mass, 5))  # [0.13957 0.13957]
 ```
 
 `obj` selects 2D, 3D, or 4D from the supplied coordinates. All combinations of
@@ -47,11 +51,14 @@ mass: $m_{12}^2=(p_1+p_2)^2$. The sum of daughter masses is a different quantity
 import numpy as np
 import lvec
 
-tracks = lvec.obj(pt=np.array([2., 3.]), eta=.2, phi=.4, mass=.13957)
+tracks = lvec.obj(
+    pt=np.array([2., 3.]), eta=np.array([.2, -.3]),
+    phi=np.array([.4, -.5]), mass=.13957,
+)
 selected = tracks[tracks.pt > 2.5]
 parent = tracks[0] + tracks[1]
-expected_m2 = tracks[0].mass2 + tracks[1].mass2 + 2 * tracks[0].dot(tracks[1])
-np.testing.assert_allclose(parent.mass2, expected_m2)
+print(selected.pt)  # [3.]
+print(f"Pair mass: {parent.mass:.3f}")  # Pair mass: 2.481
 ```
 
 | Observable | Definition |
@@ -75,14 +82,16 @@ momenta. Pseudorapidity separation generally is not for massive particles.
 
 ## Jagged events and reductions
 
+Install `lvec[awkward]` to work with variable-length particle collections.
+
 ```python
 import awkward as ak
 from lvec import LVec
 
 particles = LVec(ak.Array([[1., 2.], [], None, [3., None]]), 0., 0., 5.)
 totals = particles.sum(axis=-1)
-assert ak.to_list(totals.px) == [3., 0., None, 3.]
-assert ak.to_list(totals.E) == [10., 0., None, 5.]
+print(ak.to_list(totals.px))  # [3.0, 0.0, None, 3.0]
+print(ak.to_list(totals.E))   # [10.0, 0.0, None, 5.0]
 ```
 
 `axis=-1` reduces particles within each event; `sum()` reduces all collection
@@ -115,15 +124,14 @@ A reference must be finite, future-directed, and timelike; a lightlike system
 has no rest frame.
 
 ```python
-import numpy as np
 from lvec import Frame, LVec
 
 parent = LVec(1., 2., 3., 8.)
 daughter = LVec(1., 0., 0., 2.)
 cm = Frame.from_lvec(parent)
 daughter_cm = daughter.to_frame(cm)
-assert daughter_cm.allclose(daughter.boost_to_rest(parent))
-np.testing.assert_allclose(parent.to_frame(cm).p, 0., atol=1e-14)
+print(daughter_cm.allclose(daughter.boost_to_rest(parent)))  # True
+print(f"CM momentum: {parent.to_frame(cm).p:.3f}")  # CM momentum: 0.000
 ```
 
 A `Frame` stores velocity relative to the lab. `to_frame(frame)` assumes lab
@@ -157,7 +165,7 @@ resonance = LVec(0., 0., 3., 5.)
 daughter_rest = LVec(1., 0., np.sqrt(3.), 2.)
 daughter = daughter_rest.boost(0., 0., .6)
 theta = daughter.helicity_angle(parent=resonance, reference=mother)
-np.testing.assert_allclose(theta, np.pi/6, atol=1e-14)
+print(f"Helicity angle: {theta:.3f} rad")  # Helicity angle: 0.524 rad
 ```
 
 Supply all three vectors in the same input frame. The helicity angle is in
