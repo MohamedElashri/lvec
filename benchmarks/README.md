@@ -11,38 +11,50 @@ after timing, including the positions of missing values.
 
 **Milliseconds per call, median ± median absolute deviation (MAD).** NumPy
 inputs contain 100,000 particles; jagged inputs contain 100,000 events and
-401,402 particles. These are fresh calculations on existing collections.
+401,402 particles. These are fresh calculations on existing collections;
+repeated p4 boosts reuse the LVec reference's cached mass.
 
 | Workload | NumPy LVec | NumPy vector | Jagged LVec | Jagged vector |
 | --- | ---: | ---: | ---: | ---: |
-| Uncached mass | 0.315 ± 0.026 | 0.387 ± 0.017 | 3.049 ± 0.348 | 3.730 ± 0.087 |
-| Four-vector normalization | 0.519 ± 0.012 | 1.878 ± 0.047 | 4.697 ± 0.573 | 9.583 ± 0.388 |
-| Beta boost | 0.796 ± 0.010 | 1.620 ± 0.017 | 4.687 ± 0.280 | 7.381 ± 0.086 |
-| Euler rotation, per-particle angles | 1.479 ± 0.012 | 2.159 ± 0.042 | 8.541 ± 0.706 | 9.846 ± 0.057 |
-| Add, boost, calculate mass | 1.342 ± 0.035 | 2.782 ± 0.059 | 9.611 ± 0.415 | 13.188 ± 0.313 |
+| Uncached mass | 0.316 ± 0.003 | 0.431 ± 0.038 | 3.269 ± 0.434 | 4.869 ± 0.958 |
+| Four-vector normalization | 0.517 ± 0.010 | 1.809 ± 0.072 | 5.164 ± 0.177 | 10.061 ± 1.063 |
+| Beta boost | 0.795 ± 0.056 | 1.627 ± 0.068 | 4.523 ± 0.341 | 7.530 ± 0.098 |
+| Gamma boost, per-particle parameters | 0.889 ± 0.028 | 0.978 ± 0.046 | 6.754 ± 0.443 | 5.348 ± 0.232 |
+| p4 boost, shared reference | 1.336 ± 0.013 | 1.560 ± 0.019 | 6.371 ± 0.295 | 7.133 ± 0.241 |
+| p4 boost, per-particle references | 1.768 ± 0.123 | 3.399 ± 0.055 | 10.110 ± 0.315 | 15.104 ± 0.753 |
+| Euler rotation, per-particle angles | 1.466 ± 0.052 | 2.122 ± 0.062 | 9.438 ± 0.439 | 10.206 ± 0.208 |
+| Quaternion rotation, per-particle parameters | 1.925 ± 0.046 | 2.091 ± 0.041 | 9.431 ± 0.709 | 9.044 ± 0.202 |
+| Dense matrix, per-particle coefficients | 1.480 ± 0.062 | 1.609 ± 0.002 | 9.868 ± 0.285 | 8.233 ± 0.605 |
+| Add, boost, calculate mass | 1.322 ± 0.036 | 2.674 ± 0.048 | 8.829 ± 0.392 | 14.535 ± 0.478 |
 
-Native jagged record construction is at parity: 0.244 ± 0.001 ms for LVec
-versus 0.245 ± 0.001 ms for vector. **Owned** LVec construction costs
-1.505 ± 0.048 ms because it snapshots numerical buffers. A cached mass read
-is another distinct boundary. Compare the path your analysis actually uses.
+Native jagged record construction measured 0.243 ± 0.001 ms
+for LVec versus 0.261 ± 0.013 ms for vector. **Owned**
+LVec construction costs 1.668 ± 0.165 ms because it snapshots
+numerical buffers. A cached mass read is another distinct boundary.
+Compare the path your analysis actually uses.
 
-These fixtures favor LVec; others are close. The jagged varying-axis rotation
-measured 4.699 ± 0.292 ms versus vector's 4.512 ± 0.339 ms. MAD is dispersion,
-not a confidence interval. Results on one workstation do not establish a
-universal ordering across operations or layouts.
+Parameterized jagged gamma boosts and dense matrices remain slower than vector;
+quaternion rotations are close within the observed dispersion. The dense-matrix
+fixture measured 9.868 ± 0.285 ms versus vector's
+8.233 ± 0.605 ms. MAD is dispersion, not a
+confidence interval; results do not establish a universal ordering across
+operations or layouts.
 
 ## Measurement record
 
+The post-merge run contains 198 timing rows, including the parameterized boost,
+quaternion, dense-matrix, and native-record cases added during the review.
+
 | Item | Value |
 | --- | --- |
-| Measured source | `a270b7897c3b60132dcccc7a7300f3d7ca85556f` |
+| Measured source | `3cd0fdb18aa2fc0f95752b25157f27d878b25ba1` |
 | Date | 2026-11-02, Europe/Zurich |
 | Environment | Python 3.13.12; NumPy 2.5.4; Awkward 2.14.0; vector 1.9.0 |
 | Hardware | Apple M1, 8 logical CPUs, 16 GiB; macOS 27.2 arm64 |
 | Sampling | 3 fresh processes × 7 samples; 2 warmups; calibrated batches targeting 20 ms |
 | Controls | Seed 20261101; numeric runtime threads 1; `PYTHONHASHSEED=0`; affinity/power not controlled |
-| Library SHA256 | `06d4f7045da86e31b765c3d174fb784ac200470e42f139555f2b7220582e3278` |
-| Framework SHA256 | `c3333ef50d492ebf927ba62f25d7f2623280b070cbcc1f92f893f045605d844f` |
+| Library SHA256 | `bfca9a44d3a1a0422cf6b9df0a43730647e08211d728d88a765f02567d56c446` |
+| Framework SHA256 | `ed6836eadd688560fe06fdc3136ea6750cebf9a7db22fd042847f7b219308268` |
 
 Inputs, setup and validation are outside timing. Cache clearing is included
 in cold cases; `timeit` disables cyclic garbage collection. Case order is
@@ -52,9 +64,32 @@ report incremental traced bytes including live outputs, not process RSS.
 Fingerprints cover sorted filenames and contents of `lvec/*.py` and
 `benchmarks/*.py`. Reports include revisions, dirty state, loaded source path,
 versions, invocations, loop counts, and raw samples. The
-[complete recorded study](https://github.com/MohamedElashri/lvec/blob/afc384c75cc6e236d632926e6d9c03fadd5c90b5/benchmarks/README.md#kernel-optimization-update)
-retains the full tables, allocation results, alternating revision checks, and
-historical measurements. It describes development code, not a released wheel.
+[earlier optimization study](https://github.com/MohamedElashri/lvec/blob/afc384c75cc6e236d632926e6d9c03fadd5c90b5/benchmarks/README.md#kernel-optimization-update)
+retains historical tables and allocation results. The current measurements also
+describe development code, not a released wheel.
+
+## Post-merge comparison
+
+Three alternating before/after rounds compare merged revision `6af876f` with
+`3cd0fdb`, using the same framework and 100,000-particle/event inputs.
+Each cell is the median of three within-round ratios of call medians:
+**final time / baseline time**, so smaller is faster. Each run uses one fresh
+process, seven samples, and no allocation measurement.
+
+| Workload | NumPy ratio | Jagged ratio |
+| --- | ---: | ---: |
+| Gamma boost, per-particle parameters | 0.654 | 0.417 |
+| p4 boost, shared reference | 0.284 | 0.272 |
+| p4 boost, per-particle references | 0.439 | 0.327 |
+| Quaternion rotation, per-particle parameters | 0.700 | 0.266 |
+| Diagonal matrix, per-particle coefficients | 1.021 | 0.881 |
+| Add, boost, calculate mass | 1.077 | 0.967 |
+| vector workflow control | 1.032 | 1.004 |
+
+The large boost/quaternion gains repeat across rounds. Smaller differences in
+unchanged workflows and controls vary between rounds and need a quieter host
+before being treated as regressions or improvements. Numerical validation also
+passes strided, missing, deep, heavy-tail, and extreme inputs.
 
 ## Reproduction
 
@@ -74,6 +109,16 @@ The default NumPy suite runs offline without vector or Awkward. For a quick
 local check, use `--processes 1 --samples 3 --min-time .005 --no-memory`.
 For revision comparisons, invoke one fixed framework with `--source` selecting
 each clean checkout; alternate their order and retain separate reports.
+The alternating comparison used:
+
+```bash
+python -m benchmarks --source /path/to/revision --layouts numpy jagged \
+  --sizes 100000 --compare-vector --processes 1 --samples 7 --no-memory \
+  --cases construct_mass mass_uncached add boost boost_gamma boost_gamma_array \
+  boost_p4 boost_p4_array matrix4d matrix4d_array matrix4d_dense_array rotate \
+  rotate_euler rotate_euler_array rotate_quaternion_array workflow vector.workflow \
+  --output /tmp/lvec-revision.md
+```
 
 ## Workload selection
 
@@ -89,8 +134,10 @@ Use exact names with `--cases`. Selections must exist for every chosen layout.
 | `rotate_axis`, `rotate_euler` | Shared axis=(1,1,1), angle=2pi/3; zxz angles=(.2,.3,.4) |
 | `rotate_axis_array`, `rotate_euler_array` | Angle=.2+.01*px; axis=(px+2,py+3,pz+4) or Euler theta=.3, psi=.4 |
 | `rotate_axis_varying`, `rotate_euler_varying` | 257 pre-generated scalar orientations, exceeding the 128-entry coefficient caches |
+| `boost_gamma_array`, `boost_p4`, `boost_p4_array` | Per-particle gamma=1+.1*abs(px); shared p4=(.1,.2,.3,2); or each input p4 as its own active boost reference |
+| `rotate_quaternion_array`, `matrix4d_dense_array` | Unit z quaternion for angle=.1+.01*px; or diagonal 1+.01*px with off-diagonal .1 |
 | `matrix4d_array` | Per-particle diagonal factor 1+.01*px |
-| `record_mass`, `record_construct`, `record_construct_mass` | Native Awkward mass or Cartesian view construction, optionally followed by mass |
+| `record_mass`, `record_construct`, `record_construct_mass`, `record_rotate_euler`, `record_boost` | Native Awkward mass, Cartesian view construction, construction plus mass, Euler rotation, or beta boost |
 | `cancellation_mass2`, `mixed_boost_0/1/100` | Exact-invariant cancellation or 0/1/100 exceptional boost entries; `extreme` layout only |
 
 `vector.*` counterparts are available on NumPy/jagged layouts for construction,
