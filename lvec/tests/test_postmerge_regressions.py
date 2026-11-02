@@ -187,3 +187,25 @@ def test_quaternion_fusion_recovers_overflowed_intermediates():
     with np.errstate(all='raise'):
         result=v.rotate_quaternion(q,q,q,q)
     for component in result.to_p4():np.testing.assert_array_equal(component,data)
+
+
+@pytest.mark.parametrize('awkward',[False,True])
+def test_variable_matrix_recovery_across_large_block_boundaries(awkward):
+    from .test_transform_optimization import reference_dot
+    size=131073
+    data=np.random.default_rng(72).normal(size=(4,size))
+    factor=1.+np.arange(size,dtype=float)/size*.01
+    indices=(0,32767,32768,65535,65536,131071,131072)
+    for index in indices:data[:,index]=(1e308,1e308,1e308,1.)
+    if awkward:
+        ak=pytest.importorskip('awkward')
+        components=tuple(ak.unflatten(c,[65536,0,65537]) for c in data)
+        factors=ak.unflatten(factor,[65536,0,65537])
+    else:components=data;factors=factor
+    matrix={a+b:float(a==b) for a in 'xyzt' for b in 'xyzt'}
+    matrix.update(xx=factors,xy=1.,xz=-1.)
+    with np.errstate(all='raise'):
+        result=LVec(*components).transform4D(matrix)
+    x=ak.to_numpy(ak.flatten(result.x,axis=None)) if awkward else result.x
+    for index in indices:
+        assert x[index]==reference_dot(data[:,index],(factor[index],1.,-1.,0.))
