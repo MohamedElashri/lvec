@@ -87,12 +87,15 @@ python 10_reference_frames.py
 
 For ROOT I/O scripts, run `mkdir -p samples` and `python create_test_data.py`
 from `examples` first. That fixture demonstrates I/O and is not an
-energy-conserving decay model. `08_lhcb_data.py` may download data and write
-plots; check the input units before using it for analysis.
+energy-conserving decay model. `08_lhcb_data.py` downloads LHCb data, converts
+momenta from MeV to GeV, and plots pair masses under the pion mass hypothesis.
+Run `python .github/scripts/check_examples.py` from the repository root to
+check all examples with temporary local data, including a small LHCb-shaped
+fixture that verifies the unit conversion without downloading collision data.
 
 ## Documentation
 
-Use Python 3.11 or later to build the manual:
+Use Python 3.10 or later to build the manual:
 
 ```bash
 python -m pip install -e ".[docs,awkward]"

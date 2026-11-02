@@ -4,7 +4,7 @@ Cache Performance Analysis
 =========================
 
 This example demonstrates how to use the cache instrumentation
-to measure the performance of the caching system in LVEC.
+to inspect the caching system in LVec.
 
 It shows:
 1. How to enable instrumentation
@@ -14,6 +14,7 @@ It shows:
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 from lvec import LVec, Vector2D, Vector3D
 
 def analyze_lvec_caching():
@@ -30,7 +31,7 @@ def analyze_lvec_caching():
     vectors = LVec(px, py, pz, E)
     
     # Reset counters to start fresh
-    vectors._cache.reset_counters()
+    vectors.reset_cache_stats()
     
     # First access to properties calculates and caches
     print("\nInitial property calculation (cache misses)...")
@@ -40,7 +41,7 @@ def analyze_lvec_caching():
     _ = vectors.mass # Invariant mass
     
     # Print statistics after first access
-    stats = vectors._cache.get_stats()
+    stats = vectors.cache_stats
     print(f"Overall hit ratio: {stats['overall']['hit_ratio']:.2%}")
     print("\nProperty hit ratios after first access:")
     for prop, data in sorted(stats['properties'].items()):
@@ -55,7 +56,7 @@ def analyze_lvec_caching():
     _ = vectors.mass
     
     # Print statistics after second access
-    stats = vectors._cache.get_stats()
+    stats = vectors.cache_stats
     print(f"Overall hit ratio: {stats['overall']['hit_ratio']:.2%}")
     print("\nProperty hit ratios after second access:")
     for prop, data in sorted(stats['properties'].items()):
@@ -71,7 +72,7 @@ def analyze_lvec_caching():
     _ = vectors.mass
     
     # Print final statistics
-    stats = vectors._cache.get_stats()
+    stats = vectors.cache_stats
     print(f"Overall hit ratio: {stats['overall']['hit_ratio']:.2%}")
     print("\nProperty hit ratios after cache invalidation and reaccess:")
     for prop, data in sorted(stats['properties'].items()):
@@ -94,19 +95,18 @@ def analyze_vec2d_vec3d_caching():
     vec3d = Vector3D(x, y, z)
     
     # Reset counters
-    vec2d._cache.reset_counters()
-    vec3d._cache.reset_counters()
+    vec2d.reset_cache_stats()
+    vec3d.reset_cache_stats()
     
     # Analyze Vector2D
     print("\nVector2D Cache Performance:")
     _ = vec2d.r    # Magnitude
     _ = vec2d.phi  # Azimuthal angle
-    stats_2d_first = vec2d._cache.get_stats()
     
     # Access again
     _ = vec2d.r
     _ = vec2d.phi
-    stats_2d = vec2d._cache.get_stats()
+    stats_2d = vec2d.cache_stats
     
     print(f"Overall hit ratio: {stats_2d['overall']['hit_ratio']:.2%}")
     for prop, data in sorted(stats_2d['properties'].items()):
@@ -119,14 +119,13 @@ def analyze_vec2d_vec3d_caching():
     _ = vec3d.rho   # Cylindrical radius
     _ = vec3d.phi   # Azimuthal angle
     _ = vec3d.theta # Polar angle
-    stats_3d_first = vec3d._cache.get_stats()
     
     # Access again
     _ = vec3d.r
     _ = vec3d.rho
     _ = vec3d.phi
     _ = vec3d.theta
-    stats_3d = vec3d._cache.get_stats()
+    stats_3d = vec3d.cache_stats
     
     print(f"Overall hit ratio: {stats_3d['overall']['hit_ratio']:.2%}")
     for prop, data in sorted(stats_3d['properties'].items()):
@@ -240,7 +239,9 @@ def main():
     vec2d_stats, vec3d_stats = analyze_vec2d_vec3d_caching()
     
     # Create visualizations
-    plot_hit_ratios(lvec_stats, vec2d_stats, vec3d_stats, "examples/plots/cache_hit_ratios.pdf")
+    output = Path(__file__).resolve().parent / "plots" / "cache_hit_ratios.pdf"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    plot_hit_ratios(lvec_stats, vec2d_stats, vec3d_stats, output)
     
     print("\nCache Performance Summary:")
     print("-------------------------")
