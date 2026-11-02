@@ -32,11 +32,12 @@ awkward = ["awkward>=2.7.4"]
 test = ["pytest>=8.3.5"]
 examples = ["awkward>=2.7.4", "uproot>=5.0.0", "matplotlib>=3.10.1"]
 benchmark = ["awkward>=2.7.4", "vector>=1.6.1"]
+docs = ["sphinx>=8.2,<9", "myst-parser>=4,<5", "furo>=2024.8.6"]
 dev = ["lvec[awkward,test,examples,benchmark]"]
 
 [project.urls]
 Homepage = "https://github.com/MohamedElashri/lvec"
-Documentation = "https://github.com/MohamedElashri/lvec/blob/main/user-guide.md"
+Documentation = "https://melashri.net/lvec/"
 Repository = "https://github.com/MohamedElashri/lvec"
 Issues = "https://github.com/MohamedElashri/lvec/issues"
 

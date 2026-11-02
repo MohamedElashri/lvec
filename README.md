@@ -41,10 +41,14 @@ samples, start with [jagged events and reductions](user-guide.md#jagged-events-a
 
 ## Documentation
 
+The [LVec manual](https://melashri.net/lvec/) provides searchable tutorials,
+physics conventions, and API reference pages. Sources can also be read here:
+
 | Start here | Contents |
 | --- | --- |
+| [Tutorials](docs/tutorials/first-analysis.md) | Pair reconstruction, jagged events, and rest-frame calculations |
 | [Physics guide](user-guide.md) | Coordinates, invariant mass, event selections, rest frames, decay angles, and numerical conventions |
-| [API reference](docs/api-reference.md) | Constructors, observables, transformations, array operations, and cache options |
+| [API reference](docs/api-reference.md) | Signatures, parameters, observables, transformations, array operations, and cache options |
 | [Migrating from vector](docs/vector-migration.md) | Familiar interfaces and scientific differences to check |
 | [Benchmarks](benchmarks/README.md) | Representative measurements, ownership boundaries, and reproduction |
 | [Contributing](CONTRIBUTING.md) | Testing, numerical bug reports, and releases |
