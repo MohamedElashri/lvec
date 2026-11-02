@@ -199,6 +199,8 @@ invariant. The legacy `LVec.from_ptepm(..., m=...)` squares its mass argument;
 
 Calculations use float64. Scaled magnitudes, compensated or exact accumulation,
 and selective Decimal recovery address detected cancellation and range risks.
+Boost recovery also covers subnormal reference masses and proper velocities;
+parameter validation ignores masked and unused Awkward storage.
 These checks cannot recover precision lost in inputs or guarantee correct
 rounding or reversible transformations for every input. A squared observable
 may overflow or underflow even when its square root is representable. NaN and

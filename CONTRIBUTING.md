@@ -24,6 +24,58 @@ See [benchmark reproduction](benchmarks/README.md#reproduction).
 The [CI workflow](.github/workflows/Build_Package.yml) covers Python 3.10–3.15,
 minimum/current dependencies, NumPy-only installations, and distributions.
 
+Use separate virtual environments for compatibility checks. Install minimum
+versions with `python -m pip install -e ".[awkward,test]" -c requirements.txt`;
+for NumPy-only checks install `.[test]` without the Awkward or benchmark extras.
+Run the same test command in each environment; optional tests skip when their
+backend is absent.
+
+## Finding and changing numerical code
+
+| Area | Files |
+| --- | --- |
+| Public vectors, observables, and named frames | `lvec/lvec.py`, `lvec/vectors.py`, `lvec/frame.py` |
+| Shared mathematical API and NumPy protocols | `lvec/_protocol.py` |
+| Coordinate factories and projections | `lvec/_coordinates.py` |
+| Array validation, ownership, and optional backend | `lvec/backends.py`, `lvec/utils.py` |
+| Native Awkward record behavior | `lvec/awkward.py` |
+| Adaptive arithmetic and exact accumulation | `lvec/_adaptive.py`, `lvec/_exact.py` |
+| Boost, matrix, and rotation kernels | `lvec/_boost.py`, `lvec/_transform.py`, `lvec/_rotation.py` |
+| Independent checks and measured workloads | `lvec/tests/`, `benchmarks/cases.py` |
+
+When changing a calculation:
+
+1. State the coordinate convention, units, valid domain, and expected physics
+   identity before implementing it. Keep signed invariants and the active/passive
+   boost distinction consistent with the [physics guide](user-guide.md).
+2. Keep an ordinary NumPy path and test Awkward masks, empty events, broadcasting,
+   and scalar/array parameters. Numerical kernels should operate on leaves;
+   repeated high-level Awkward expressions often repeat layout traversal.
+3. Test against an independent analytic, Fraction, Decimal, or matrix reference.
+   Cover cancellation, subnormal values, range limits, and numerical block
+   boundaries when applicable. A comparison against vector alone is insufficient.
+4. Measure complete calls with the same framework, seeded inputs, and timing
+   boundaries before and after. Run timings separately from tests and builds,
+   using fixed clean checkouts. Retain recovery checks when optimizing.
+
+Public collections must snapshot numeric **and structural** buffers. Private
+owned-result paths require proof that every retained buffer is fresh or already
+owned; array-valued parameters can supply mutable offsets, indices, or masks.
+Native Awkward records instead have view semantics: temporary numerical views
+must not retain property caches, freeze external buffers, or escape as public
+owned collections. Cache only immutable scalar transformation parameters.
+Call `_new_matching` only after a kernel has established matching float64 fields;
+external structure still needs snapshots unless ownership is also proved.
+Use `_new` for results that still need shape validation.
+
+For a targeted physics check, run:
+
+```bash
+python -m pytest lvec/tests/test_physics_regressions.py \
+  lvec/tests/test_stress_physics.py lvec/tests/test_parameter_kernels.py \
+  -W error::RuntimeWarning
+```
+
 ## Examples
 
 ```bash
@@ -58,3 +110,8 @@ Publishing a GitHub release triggers the [release workflow](.github/workflows/py
 which tests, builds, checks, and publishes through PyPI Trusted Publishing.
 Draft releases do not publish. Keep [CITATION.cff](CITATION.cff) and the
 user-facing documentation consistent with the released behavior.
+
+`hatch_build.py` converts relative README links to canonical GitHub URLs in
+package metadata, so they work on PyPI while repository links follow the branch
+being read. Check the built description and install the wheel outside the
+checkout before a release; an editable install can hide missing packaged files.

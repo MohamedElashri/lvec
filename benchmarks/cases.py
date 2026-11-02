@@ -8,7 +8,7 @@ from itertools import cycle
 
 import numpy as np
 
-from lvec import LVec, Vector3D
+from lvec import LVec, Vector3D, obj
 
 
 LAYOUTS = ("numpy", "strided", "jagged", "missing", "deep", "heavy-tail", "extreme")
@@ -136,6 +136,30 @@ def core_cases(layout, size, seed, compare_vector=False):
     def mass_reference():
         return np.sqrt(energy * energy - (px * px + py * py + pz * pz))
 
+    extra_names={'boost_gamma_array','boost_p4','boost_p4_array','rotate_quaternion_array','matrix4d_dense_array'}
+    def extra_case(name,collection,reference_factory,check):
+        kind=name.removeprefix('vector.')
+        if kind=='boost_gamma_array':
+            g=1.+.1*abs(px);u=np.sqrt((g-1)*(g+1))
+            return Case(name,lambda:collection.boostX(gamma=g),
+                        lambda r:check(r,(g*px+u*energy,py,pz,g*energy+u*px)))
+        if kind.startswith('boost_p4'):
+            reference=collection if kind=='boost_p4_array' else reference_factory()
+            beta=tuple(c/energy for c in data[:3]) if kind=='boost_p4_array' else (.05,.1,.15)
+            expected=boost_reference(data,beta)
+            return Case(name,lambda:collection.boost_p4(reference),lambda r:check(r,expected))
+        if kind=='rotate_quaternion_array':
+            angle=.1+.01*px
+            quaternion=(np.cos(angle),0.,0.,np.sin(angle))
+            c,s=np.cos(2*angle),np.sin(2*angle)
+            expected=(c*px-s*py,s*px+c*py,pz,energy)
+            return Case(name,lambda:collection.rotate_quaternion(*quaternion),lambda r:check(r,expected))
+        factor=1.+.01*px
+        matrix={a+b:(factor if a==b else .1) for a in 'xyzt' for b in 'xyzt'}
+        total=sum(data)
+        return Case(name,lambda:collection.transform4D(matrix),
+                    lambda r:check(r,tuple((factor-.1)*c+.1*total for c in data)))
+
     def parameter_rotation(name, collection, make_axis, check):
         operation_name=name.removeprefix('vector.')
         arbitrary=operation_name.startswith('rotate_axis')
@@ -181,6 +205,8 @@ def core_cases(layout, size, seed, compare_vector=False):
             def check_vector(r,expected):
                 for value,wanted in zip((r.x,r.y,r.z,r.t),expected):
                     assert_values(value,wanted)
+            if name.removeprefix('vector.') in extra_names:
+                return extra_case(name,other,lambda:vector.obj(x=.1,y=.2,z=.3,t=2.),check_vector)
             if name in {'vector.rotate_euler_array','vector.rotate_axis_array',
                         'vector.rotate_euler_varying','vector.rotate_axis_varying'}:
                 def make_axis(x,y,z):
@@ -238,6 +264,16 @@ def core_cases(layout, size, seed, compare_vector=False):
         options = ({"max_cache_size": 0} if name == "mass_uncached" else
                    {"cache_intermediates": True} if name == "properties_intermediates" else {})
         v = LVec(*data, **options)
+        if name in extra_names:
+            return extra_case(name,v,lambda:obj(px=.1,py=.2,pz=.3,E=2.),check_components)
+        if name in {'record_rotate_euler','record_boost'}:
+            records=v.to_ak_record(with_behavior=True)
+            def check_records(r,expected):
+                for actual,wanted in zip((r.x,r.y,r.z,r.t),expected):assert_values(actual,wanted)
+            if name=='record_boost':
+                return Case(name,lambda:records.boost(*BETA),lambda r:check_records(r,boost_reference(data)))
+            expected=tuple(sum(EULER_MATRIX[i,j]*data[j] for j in range(3)) for i in range(3))+(energy,)
+            return Case(name,lambda:records.rotate_euler(*EULER),lambda r:check_records(r,expected))
         if name in {'rotate_euler_array','rotate_axis_array',
                     'rotate_euler_varying','rotate_axis_varying'}:
             return parameter_rotation(name,v,Vector3D,check_components)
@@ -313,12 +349,14 @@ def core_cases(layout, size, seed, compare_vector=False):
              "properties_intermediates", "add", "boost", "rotate", "sum", "workflow",
              "unit_cold", "rotate_axis", "rotate_euler", "boost_gamma", "matrix4d",
              'rotate_euler_array','rotate_axis_array','rotate_euler_varying','rotate_axis_varying','matrix4d_array']
+    names+=sorted(extra_names)
     if layout in {'jagged','missing','deep','heavy-tail'}:
-        names += ['record_mass','record_construct','record_construct_mass']
+        names += ['record_mass','record_construct','record_construct_mass','record_rotate_euler','record_boost']
     if compare_vector and layout in {"numpy", "jagged"}:
         names += ["construct_mass", "vector.construct", "vector.construct_mass", "vector.mass", "vector.workflow",
                   'vector.unit_cold','vector.rotate_axis','vector.rotate_euler','vector.boost_gamma','vector.matrix4d','vector.boost',
                   'vector.rotate_euler_array','vector.rotate_axis_array','vector.rotate_euler_varying','vector.rotate_axis_varying','vector.matrix4d_array']
+        names+=['vector.'+name for name in sorted(extra_names)]
     return [CaseSpec(name, lambda name=name: prepare(name)) for name in names], metadata
 
 

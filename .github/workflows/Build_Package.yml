@@ -94,11 +94,15 @@ jobs:
           cd "$RUNNER_TEMP"
           python - <<'PYCODE'
           import importlib.metadata
+          import re
           import lvec
           from lvec import LVec
 
           assert importlib.metadata.version("lvec") == lvec.__version__
           assert LVec(1e200, 1., 0., 1e200).mass2 == -1.
+          description = importlib.metadata.metadata("lvec").get_payload()
+          for target in re.findall(r"\]\(([^\s)]+)\)", description):
+              assert target.startswith(("https://", "http://", "#")), target
           PYCODE
       - uses: actions/upload-artifact@v4.6.2
         with:
