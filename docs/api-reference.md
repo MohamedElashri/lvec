@@ -55,7 +55,7 @@ Properties are available in applicable dimensions; aliases share calculations.
 | Arithmetic | `+`, `-`, scalar `*` and `/`; `add`, `subtract`, `scale` |
 | Scalar product | `dot(q)`, `p @ q`; Minkowski in 4D, Euclidean in 2D/3D |
 | Norm and normalization | `abs(p)` gives signed mass in 4D and Euclidean magnitude in 2D/3D; `unit()` |
-| Partial scaling | `scale2D/3D/4D(factor)`, `neg2D/3D/4D()` |
+| Partial scaling | `scale2D`, `scale3D`, `scale4D` with a factor; `neg2D`, `neg3D`, `neg4D` |
 | Equality | `==`, `!=`, `equal(q)`, `not_equal(q)`; one mask entry per vector |
 | Approximate equality | `isclose(q, rtol=1e-5, atol=1e-8, equal_nan=False)`, `allclose(...)` |
 | Spatial products and angles | `cross(q)` → 3D, `deltaangle(q)`, `opening_angle(q)` on LVec |
@@ -79,13 +79,13 @@ the requested coordinate. Thus `to_4D()` adds `t=0`, while `to_xyztau()` adds
 
 | Operation | Interface |
 | --- | --- |
-| Axis rotation | `rotateX/Y/Z(angle)`; `rotx/y/z`, `rotate(angle, axis='z')` |
+| Axis rotation | `rotateX(angle)`, `rotateY(angle)`, `rotateZ(angle)`; aliases `rotx`, `roty`, `rotz` |
 | General rotation | `rotate_axis(axis, angle)`, `rotate_euler(phi, theta, psi, order='zxz')` |
 | Other conventions | `rotate_nautical(yaw, pitch, roll)`, `rotate_quaternion(u, i, j, k)` |
-| Matrix transform | `transform2D/3D/4D(matrix)`; mappings keyed `xx`, `xy`, … or arrays shaped `(..., n, n)` |
+| Matrix transform | `transform2D`, `transform3D`, `transform4D` with mappings keyed `xx`, `xy`, … or arrays shaped `(..., n, n)` |
 | Active beta boost | `boost(bx, by, bz)`, `boost_beta3(beta3)`, `boostz(beta)` |
 | Active reference boost | `boost_p4(p4)`, or `boost(booster)` dispatching 3D beta / 4D momentum |
-| Axis boost | `boostX/Y/Z(beta=...)` or `boostX/Y/Z(gamma=...)`; exactly one parameter |
+| Axis boost | `boostX`, `boostY`, `boostZ` with `beta=...` or `gamma=...`; exactly one parameter |
 | CM boost | `boostCM_of_beta3`, `boostCM_of_p4`, `boostCM_of`; `boost_to_rest(reference=None)` |
 | Velocity vector | `to_beta3()` |
 | Named frame | `to_frame(frame)`, `transform_frame(source, target)` |
@@ -95,7 +95,7 @@ the requested coordinate. Thus `to_4D()` adds `t=0`, while `to_xyztau()` adds
 `Frame.rest()`, `Frame.from_lvec(total)`, and `Frame.center_of_mass(vectors)`
 construct common frames. Parameters are `beta_x`, `beta_y`, `beta_z`, and `gamma`.
 See [frame and angle conventions](../user-guide.md#boosts-and-reference-frames).
-For 2D rotations, use `Vector2D.rotate(angle)` without an axis argument.
+`rotate(angle, axis='z')` selects an axis in 3D/4D; 2D uses `rotate(angle)`.
 
 ## Arrays and interchange
 
