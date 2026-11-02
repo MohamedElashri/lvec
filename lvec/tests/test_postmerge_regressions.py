@@ -60,9 +60,15 @@ def test_reference_boost_does_not_lose_subnormal_proper_velocity(qx,px,energy):
 
 @pytest.mark.parametrize('scale',[float(np.nextafter(0.,1.)),2*float(np.nextafter(0.,1.)),
                                  float(np.finfo(float).tiny)/8,1e-200,1e-100,1.,1e100,1e200,1e307])
-def test_reference_boost_is_independent_of_reference_scale(scale):
+@pytest.mark.parametrize('backend',['scalar','numpy','awkward'])
+def test_reference_boost_is_independent_of_reference_scale(scale,backend):
     v=LVec(.1,-.2,.3,2.)
-    reference=LVec(scale,2*scale,3*scale,5*scale)
+    coordinates=(scale,2*scale,3*scale,5*scale)
+    if backend=='numpy':coordinates=tuple(np.full(9,c) for c in coordinates)
+    elif backend=='awkward':
+        ak=pytest.importorskip('awkward')
+        coordinates=tuple(ak.Array([[c]*9,[],None,[None,c]]) for c in coordinates)
+    reference=LVec(*coordinates)
     result=v.boost_p4(reference)
     with localcontext() as ctx:
         ctx.prec=100
@@ -71,8 +77,11 @@ def test_reference_boost_is_independent_of_reference_scale(scale):
         xyz=tuple(map(Decimal.from_float,(.1,-.2,.3)));e=Decimal(2)
         dot=sum(a*b for a,b in zip(u,xyz));factor=e+dot/(g+1)
         expected=tuple(float(p+a*factor) for p,a in zip(xyz,u))+(float(g*e+dot),)
-    np.testing.assert_allclose(result.to_p4(),expected,rtol=3e-14,atol=3e-14)
-    np.testing.assert_allclose(result.mass2,v.mass2,rtol=5e-14,atol=5e-14)
+    def present(c):
+        return ak.to_numpy(ak.flatten(c,axis=None)) if backend=='awkward' else c
+    for actual,wanted in zip(result.to_p4(),expected):
+        np.testing.assert_allclose(present(actual),wanted,rtol=3e-14,atol=3e-14)
+    np.testing.assert_allclose(present(result.mass2),v.mass2,rtol=5e-14,atol=5e-14)
 
 
 @pytest.mark.parametrize('direction',[1,-1])
