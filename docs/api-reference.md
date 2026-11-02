@@ -14,9 +14,9 @@ missing-value behavior, and numerical limits.
 | `LVec(px, py, pz, E, ...)` | Four-momentum; `Vector4D` and `Momentum4D` are aliases |
 | `Vector2D(x, y)`, `Vector3D(x, y, z)` | Spatial vectors; also `Momentum2D`, `Momentum3D` |
 | `obj(**coordinates)` | Select dimension and coordinate family from keywords |
-| `array(columns)` / `arr` | Coordinate mapping or structured NumPy array → owned collection |
-| `zip(columns, depth_limit=None)` | Explicit Awkward broadcasting → owned collection |
-| `Array(records)` / `awk` | Coordinate records → owned collection |
+| `array(columns)` / `arr` | Owned collection from a coordinate mapping or structured NumPy array |
+| `zip(columns, depth_limit=None)` | Owned collection with explicit Awkward broadcasting |
+| `Array(records)` / `awk` | Owned collection from coordinate records |
 | `LVec.from_p4(px, py, pz, E)` | Cartesian constructor |
 | `LVec.from_ptepm(pt, eta, phi, m)` | Legacy transverse-coordinate constructor |
 | `LVec.from_ary(mapping)`, `LVec.from_vec(obj)` | Import four named components |
@@ -58,7 +58,7 @@ Properties are available in applicable dimensions; aliases share calculations.
 | Partial scaling | `scale2D`, `scale3D`, `scale4D` with a factor; `neg2D`, `neg3D`, `neg4D` |
 | Equality | `==`, `!=`, `equal(q)`, `not_equal(q)`; one mask entry per vector |
 | Approximate equality | `isclose(q, rtol=1e-5, atol=1e-8, equal_nan=False)`, `allclose(...)` |
-| Spatial products and angles | `cross(q)` → 3D, `deltaangle(q)`, `opening_angle(q)` on LVec |
+| Spatial products and angles | `cross(q)` returns a 3D vector; `deltaangle(q)`, `opening_angle(q)` on LVec |
 | Angular separation | `delta_phi` / `deltaphi`, `deltaeta`, `delta_r` / `deltaR`, `delta_r2` / `deltaR2` |
 | Rapidity separation | LVec `delta_r(q, rapidity=True)`, `deltaRapidityPhi(q)`, and squared counterparts |
 | Direction tests | `is_parallel`, `is_antiparallel`, `is_perpendicular` with `tolerance=1e-5` on direction cosine |
@@ -72,8 +72,8 @@ use the spatial part of a 4D vector. Project explicitly with `to_2D()`,
 Named `to_<coordinates>` methods mirror the coordinate families, including
 momentum spellings such as `to_ptphietamass()`. Storage remains Cartesian.
 Dimension-only embeddings add Cartesian zeros; named embeddings add zero in
-the requested coordinate. Thus `to_4D()` adds `t=0`, while `to_xyztau()` adds
-`tau=0`; `to_3D(z=0)` specifies a planar embedding unambiguously.
+the requested coordinate. Thus `to_4D()` adds $t=0$, while `to_xyztau()` adds
+$\tau=0$; `to_3D(z=0)` specifies a planar embedding unambiguously.
 
 ## Transformations
 
@@ -82,9 +82,9 @@ the requested coordinate. Thus `to_4D()` adds `t=0`, while `to_xyztau()` adds
 | Axis rotation | `rotateX(angle)`, `rotateY(angle)`, `rotateZ(angle)`; aliases `rotx`, `roty`, `rotz` |
 | General rotation | `rotate_axis(axis, angle)`, `rotate_euler(phi, theta, psi, order='zxz')` |
 | Other conventions | `rotate_nautical(yaw, pitch, roll)`, `rotate_quaternion(u, i, j, k)` |
-| Matrix transform | `transform2D`, `transform3D`, `transform4D` with mappings keyed `xx`, `xy`, … or arrays shaped `(..., n, n)` |
-| Active beta boost | `boost(bx, by, bz)`, `boost_beta3(beta3)`, `boostz(beta)` |
-| Active reference boost | `boost_p4(p4)`, or `boost(booster)` dispatching 3D beta / 4D momentum |
+| Matrix transform | `transform2D`, `transform3D`, `transform4D` with mappings keyed `xx`, `xy`, … or arrays shaped $(\ldots,n,n)$ |
+| Active $\boldsymbol\beta$ boost | `boost(bx, by, bz)`, `boost_beta3(beta3)`, `boostz(beta)` |
+| Active reference boost | `boost_p4(p4)`, or `boost(booster)` dispatching a 3D velocity / 4D momentum |
 | Axis boost | `boostX`, `boostY`, `boostZ` with `beta=...` or `gamma=...`; exactly one parameter |
 | CM boost | `boostCM_of_beta3`, `boostCM_of_p4`, `boostCM_of`; `boost_to_rest(reference=None)` |
 | Velocity vector | `to_beta3()` |
