@@ -64,8 +64,9 @@ owned; array-valued parameters can supply mutable offsets, indices, or masks.
 Native Awkward records instead have view semantics: temporary numerical views
 must not retain property caches, freeze external buffers, or escape as public
 owned collections. Cache only immutable scalar transformation parameters.
-The private `_new_matching` path proves matching numerical fields, not ownership;
-external structural buffers still need snapshots unless ownership is also proved.
+Call `_new_matching` only after a kernel has established matching float64 fields;
+external structure still needs snapshots unless ownership is also proved.
+Use `_new` for results that still need shape validation.
 
 For a targeted physics check, run:
 
