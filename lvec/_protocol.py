@@ -691,7 +691,9 @@ class LorentzAPI(SpatialAPI):
                     if np.any(~np.isfinite(layout.data)|(abs(layout.data)<1)):
                         raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
                     return layout
-            ak.transform(check,gamma)
+            # Validate only visible values: masked and unreferenced content
+            # may contain arbitrary sentinels outside the physical domain.
+            ak.transform(check,ak.flatten(gamma,axis=None))
             invalid=False
         else:
             invalid=(not math.isfinite(gamma) or abs(gamma)<1) if isinstance(gamma,float) else backend_any(~np.isfinite(gamma)|(abs(gamma)<1))

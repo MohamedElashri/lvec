@@ -209,3 +209,24 @@ def test_variable_matrix_recovery_across_large_block_boundaries(awkward):
     x=ak.to_numpy(ak.flatten(result.x,axis=None)) if awkward else result.x
     for index in indices:
         assert x[index]==reference_dot(data[:,index],(factor[index],1.,-1.,0.))
+
+
+@pytest.mark.parametrize('layout',['byte_mask','indexed','option_index','sliced_list'])
+def test_gamma_validation_ignores_hidden_invalid_values(layout):
+    ak=pytest.importorskip('awkward')
+    data=np.array([np.nan,1.2,1.3,.5])
+    content=ak.contents.NumpyArray(data)
+    if layout=='byte_mask':
+        node=ak.contents.ByteMaskedArray(ak.index.Index8(np.array([0,1,1,0],dtype=np.int8)),content,valid_when=True)
+    elif layout=='indexed':
+        node=ak.contents.IndexedArray(ak.index.Index64(np.array([1,2],dtype=np.int64)),content)
+    elif layout=='option_index':
+        node=ak.contents.IndexedOptionArray(ak.index.Index64(np.array([-1,1,2,-1],dtype=np.int64)),content)
+    else:
+        node=ak.contents.ListOffsetArray(ak.index.Index64(np.array([1,3],dtype=np.int64)),content)
+    gamma=ak.Array(node)
+    result=LVec(1.,0.,0.,3.).boostX(gamma=gamma)
+    assert ak.to_list(ak.ones_like(result.E))==ak.to_list(ak.ones_like(gamma))
+    expected=np.array([1.2,1.3])*3+np.sqrt(np.array([1.2,1.3])**2-1)
+    np.testing.assert_allclose(ak.to_numpy(ak.flatten(result.E,axis=None)),expected,rtol=2e-14)
+    assert data.flags.writeable
