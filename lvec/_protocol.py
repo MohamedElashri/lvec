@@ -61,6 +61,10 @@ class PlanarAPI:
     def _new(self, *components, _trusted_awkward=False):
         return type(self)(*components)
 
+    def _new_matching(self,*components,_trusted_awkward=False):
+        """Result of a numerical leaf with proven matching float64 fields."""
+        return self._new(*components,_trusted_awkward=_trusted_awkward)
+
     def _check_other(self, other):
         if not isinstance(other, PlanarAPI) or self._dimension != other._dimension:
             raise TypeError("Vector operands must have the same dimension; use to_2D/to_3D/to_4D explicitly")
@@ -367,7 +371,7 @@ class PlanarAPI:
     def transform2D(self,obj):
         from ._transform import transform
         values,trusted=transform(self._components(),obj,2)
-        return self._new(*values,_trusted_awkward=trusted)
+        return self._new_matching(*values,_trusted_awkward=trusted)
 
 
 class SpatialAPI(PlanarAPI):
@@ -464,7 +468,7 @@ class SpatialAPI(PlanarAPI):
     def transform3D(self,obj):
         from ._transform import transform
         values,trusted=transform(self._components(),obj,3)
-        return self._new(*values,_trusted_awkward=trusted)
+        return self._new_matching(*values,_trusted_awkward=trusted)
 
     def rotate_axis(self,axis,angle):
         """Active right-handed rotation around a nonzero 3D direction."""
@@ -472,7 +476,7 @@ class SpatialAPI(PlanarAPI):
         if not isinstance(axis,SpatialAPI):
             raise TypeError("axis must be a 3D or 4D vector")
         values,trusted=axis_transform(self._components(),axis._components()[:3],angle)
-        return self._new(*values,_trusted_awkward=trusted)
+        return self._new_matching(*values,_trusted_awkward=trusted)
 
     def rotate_euler(self,phi,theta,psi,order='zxz'):
         """ROOT/vector Euler convention: R_a(-psi) R_b(-theta) R_c(-phi).
@@ -482,7 +486,7 @@ class SpatialAPI(PlanarAPI):
         """
         from ._transform import euler_transform
         values,trusted=euler_transform(self._components(),phi,theta,psi,order)
-        return self._new(*values,_trusted_awkward=trusted)
+        return self._new_matching(*values,_trusted_awkward=trusted)
 
     def rotate_nautical(self,yaw,pitch,roll):
         return self.rotate_euler(roll,pitch,yaw,order='zyx')
@@ -495,6 +499,10 @@ class SpatialAPI(PlanarAPI):
         """
         from ._transform import real_parameter, mapping
         u,i,j,k=map(real_parameter,(u,i,j,k))
+        if any(is_ak(c) or np.ndim(c)>0 for c in (u,i,j,k)):
+            from ._rotation import quaternion
+            trusted=not any(is_ak(c) for c in (*self._components(),u,i,j,k))
+            return self._new_matching(*quaternion(self._components(),(u,i,j,k)),_trusted_awkward=trusted)
         v=(i,j,k);base=u*u-i*i-j*j-k*k
         skew=[[0.,-k,j],[k,0.,-i],[-j,i,0.]]
         matrix=[[(base if a==b else 0.)+2*v[a]*v[b]+2*u*skew[a][b]
@@ -518,17 +526,26 @@ class LorentzAPI(SpatialAPI):
                 if _trusted_awkward:
                     return LVec._from_owned(*components,_trusted_awkward=True)
                 from .utils import ensure_array
-                from .backends import own_computed_structure
                 *values,lib=ensure_array(*components)
-                result=LVec.__new__(LVec)
-                buffers={}
-                result._px,result._py,result._pz,result._E=(own_computed_structure(c,buffers) for c in values)
-                result._lib=lib
-                result._initialize_cache()
-                return result
+                return self._new_matching(*values)
             if not any(is_ak(c) for c in components):
                 return LVec._from_owned(*components,_trusted_numpy=_trusted_awkward)
         return type(self)(*components)
+
+    def _new_matching(self,*components,_trusted_awkward=False):
+        from .lvec import LVec
+        if type(self) is not LVec:
+            return self._new(*components,_trusted_awkward=_trusted_awkward)
+        if all(is_ak(c) for c in components) and not _trusted_awkward:
+            from .backends import own_computed_structure
+            result=LVec.__new__(LVec)
+            buffers={}
+            result._px,result._py,result._pz,result._E=(own_computed_structure(c,buffers) for c in components)
+            result._lib='ak'
+            result._initialize_cache()
+            return result
+        return LVec._from_owned(*components,_trusted_awkward=_trusted_awkward,
+                                _trusted_numpy=not any(is_ak(c) for c in components))
 
     def __abs__(self):
         return self.mass
@@ -620,14 +637,28 @@ class LorentzAPI(SpatialAPI):
         if not isinstance(p4,LorentzAPI):
             raise TypeError("p4 must be a Lorentz vector")
         mass=p4.mass
-        invalid=(p4.E<=0)|(mass<=0)|~np.isfinite(mass)
-        for c in p4._components():invalid=invalid|~np.isfinite(c)
-        if backend_any(invalid):
+        components=p4._components()
+        scalar=all(isinstance(c,float) for c in components)
+        if scalar:
+            import math
+            invalid=p4.E<=0 or mass<=0 or not all(math.isfinite(c) for c in (*components,mass))
+        else:
+            from ._transform import dispatch_owned
+            def check(x,y,z,e,m):
+                invalid=(e<=0)|(m<=0)|~np.isfinite(m)
+                for c in (x,y,z,e):invalid|=~np.isfinite(c)
+                if np.any(invalid):
+                    raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
+                return x,y,z,e,m
+            check.outputs=5
+            dispatch_owned(check,(*components,mass))
+            invalid=False
+        if invalid:
             raise InputError('p4','reference','Boost references must be finite, future-directed and timelike')
         if direction==-1 and self is p4:
-            return self._new(*(c*0. for c in self._components()[:3]),mass)
-        trusted=all(not is_ak(c) and np.ndim(c)==0 for c in p4._components())
-        return self._new(*reference_boost(self._components(),p4._components(),mass,direction),_trusted_awkward=trusted)
+            return self._new_matching(*(c*0. for c in self._components()[:3]),mass)
+        trusted=scalar or not any(is_ak(c) for c in (*self._components(),*components))
+        return self._new_matching(*reference_boost(self._components(),components,mass,direction),_trusted_awkward=trusted)
 
     def boost_p4(self,p4):
         """Active boost from a future timelike p4, without converting to beta."""
@@ -653,11 +684,23 @@ class LorentzAPI(SpatialAPI):
         import math
         from ._transform import real_parameter
         gamma=real_parameter(gamma)
-        invalid=(not math.isfinite(gamma) or abs(gamma)<1) if isinstance(gamma,float) else backend_any(~np.isfinite(gamma)|(abs(gamma)<1))
+        if is_ak(gamma):
+            import awkward as ak
+            def check(layout,**kwargs):
+                if layout.is_numpy:
+                    if np.any(~np.isfinite(layout.data)|(abs(layout.data)<1)):
+                        raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
+                    return layout
+            # Validate only visible values: masked and unreferenced content
+            # may contain arbitrary sentinels outside the physical domain.
+            ak.transform(check,ak.flatten(gamma,axis=None))
+            invalid=False
+        else:
+            invalid=(not math.isfinite(gamma) or abs(gamma)<1) if isinstance(gamma,float) else backend_any(~np.isfinite(gamma)|(abs(gamma)<1))
         if invalid:
             raise InputError('gamma','boost','Gamma must be finite with absolute value at least one')
-        trusted=isinstance(gamma,float) or (isinstance(gamma,np.ndarray) and gamma.ndim==0)
-        return self._new(*gamma_axis_boost(self._components(),gamma,axis),_trusted_awkward=trusted)
+        trusted=(not is_ak(gamma) and self._lib=='np') or isinstance(gamma,float) or (isinstance(gamma,np.ndarray) and gamma.ndim==0)
+        return self._new_matching(*gamma_axis_boost(self._components(),gamma,axis),_trusted_awkward=trusted)
 
     def boostX(self,beta=None,gamma=None):
         return self._boost_axis(0,beta,gamma)
@@ -671,7 +714,7 @@ class LorentzAPI(SpatialAPI):
     def transform4D(self,obj):
         from ._transform import transform
         values,trusted=transform(self._components(),obj,4)
-        return self._new(*values,_trusted_awkward=trusted)
+        return self._new_matching(*values,_trusted_awkward=trusted)
 
 
 from ._coordinates import install_conversions

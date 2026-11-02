@@ -1,8 +1,8 @@
 [project]
 name = "lvec"
 version = "0.2.0"
-description = "A package for handling Lorentz vectors with NumPy and Awkward array backends"
-readme = "README.md"
+description = "Lorentz and spatial vectors for particle physics with NumPy and Awkward Array"
+dynamic = ["readme"]
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
@@ -51,6 +51,9 @@ addopts = "-v"
 
 [tool.hatch.build.targets.wheel]
 packages = ["lvec"]
+
+[tool.hatch.metadata.hooks.custom]
+path = "hatch_build.py"
 
 [dependency-groups]
 dev = ["lvec[dev]"]

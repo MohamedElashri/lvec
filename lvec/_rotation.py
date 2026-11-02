@@ -49,8 +49,8 @@ def _axis_matrix(parameters):
                  for i in range(3) for j in range(3))
 
 
-def _recover(coords,parameters,outputs,builder):
-    bound=4*sum(_bound(c) for c in coords[:3])
+def _recover(coords,parameters,outputs,builder,coefficient_bound=1.):
+    bound=4*coefficient_bound*sum(_bound(c) for c in coords[:3])
     threshold=max(_TINY,_RTOL*bound)
     if math.isfinite(bound) and all(np.min(abs(out),initial=np.inf)>threshold for out in outputs):
         return
@@ -86,7 +86,7 @@ def _recover(coords,parameters,outputs,builder):
             out.flat[offsets[selected]]=value
 
 
-def _rotate(values,parameters,evaluate,builder,scalar_builder,block_size=_BLOCK):
+def _rotate(values,parameters,evaluate,builder,scalar_builder,block_size=_BLOCK,recover=True,bound=None):
     count=len(values)
     scalar={i:float(p) for i,p in enumerate(parameters)
             if isinstance(p,float) or (isinstance(p,np.ndarray) and p.ndim==0)}
@@ -112,7 +112,7 @@ def _rotate(values,parameters,evaluate,builder,scalar_builder,block_size=_BLOCK)
             points=tuple(c[start:stop] for c in flat)
             p=tuple(a if np.isscalar(a) else a[start:stop] for a in parameter_flat)
             result=evaluate(points,p)
-            _recover(points,p,result,builder)
+            if recover:_recover(points,p,result,builder,1. if bound is None else bound(p))
             for target,out in zip(out_flat,result):target[start:stop]=out
         return outputs+tuple(coords[3:])
     kernel.outputs=count
@@ -156,3 +156,39 @@ def axis(values,parameters):
             return outputs
     return _rotate(values,parameters,evaluate,_axis_matrix,
                    lambda p:_scalar_axis(struct.pack('4d',*p)),block_size=16384)
+
+
+def _quaternion_matrix(parameters):
+    u,i,j,k=parameters
+    v=(i,j,k);base=u*u-i*i-j*j-k*k
+    skew=((0.,-k,j),(k,0.,-i),(-j,i,0.))
+    return tuple((base if a==b else 0.)+2*v[a]*v[b]+2*u*skew[a][b]
+                 for a in range(3) for b in range(3))
+
+
+def quaternion(values,parameters):
+    # Coefficients are evaluated inside each leaf, retaining the general
+    # matrix kernel's recovery contract for non-unit quaternions as well.
+    from ._transform import transform
+    def evaluate(points,p):
+        bounds=tuple(_bound(np.asarray(a)) for a in p)
+        lower=max(float(np.min(abs(np.asarray(a)),initial=np.inf)) for a in p)
+        if max(bounds)<math.sqrt(np.finfo(float).max)/8 and lower>=math.sqrt(_TINY):
+            u,i,j,k=p;x,y,z=points[:3]
+            with np.errstate(over='ignore',under='ignore',invalid='ignore'):
+                base=u*u-i*i-j*j-k*k
+                dot=2*(i*x+j*y+k*z)
+                cross=(j*z-k*y,k*x-i*z,i*y-j*x)
+                outputs=tuple(base*a for a in (x,y,z))
+                for out,scratch,a in zip(outputs,cross,(i,j,k)):
+                    scratch*=2*u;out+=scratch
+                    np.multiply(dot,a,out=scratch);out+=scratch
+            return outputs
+        coefficients=_quaternion_matrix(p)
+        matrix={a+b:coefficients[3*i+j] for i,a in enumerate('xyz') for j,b in enumerate('xyz')}
+        return transform(points,matrix,3)[0][:3]
+    def bound(p):
+        bounds=tuple(_bound(np.asarray(a)) for a in p)
+        return sum(a*a for a in bounds)
+    return _rotate(values,parameters,evaluate,_quaternion_matrix,_quaternion_matrix,
+                   block_size=16384,bound=bound)
