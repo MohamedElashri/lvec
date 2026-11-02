@@ -34,6 +34,7 @@ def reference_boost(values, reference, mass, direction=1):
             # upper bound can prove that no output meets a recovery trigger.
             bound=2*(sum(bounds[:3])+largest_g*sum(bounds))
             if (largest_g<=1e4 and math.isfinite(bound)
+                    and np.min(np.asarray(m),initial=np.inf)>=_TINY
                     and max(bounds)<_MAX/(8*max(largest_g,1.))
                     and np.min(abs(e),initial=np.inf)>=_TINY
                     and all(np.min(abs(v),initial=np.inf)>=_TINY or _bound(np.asarray(q))==0
@@ -47,7 +48,7 @@ def reference_boost(values, reference, mass, direction=1):
                         for result,corrected in zip(out,_small_reference(selected,direction)):
                             result[coarse]=corrected
                     return tuple(out)
-            risk=(g>1e4)
+            risk=(g>1e4)|(m<_TINY)
             for result in out:risk=risk|~np.isfinite(result)
             bounds=[abs(p)+abs(v*coefficient) for p,v in zip((px,py,pz),u)]+[abs(g*e)+abs(up)]
             for result,bound in zip(out,bounds):
@@ -113,7 +114,7 @@ def _small_reference(arrays,direction):
         result=tuple(p+a*factor for p,a in zip((x,y,z),u))+(g*e+dot,)
         bounds=tuple(abs(p)+abs(a*factor) for p,a in zip((x,y,z),u))+(abs(g*e)+abs(dot),)
         scale=max(map(abs,(x,y,z,e)))
-        risk=g>1e4 or not all(math.isfinite(c) for c in result)
+        risk=g>1e4 or m<_TINY or not all(math.isfinite(c) for c in result)
         risk|=any(abs(c)<=_RTOL*b and b!=0 for c,b in zip(result,bounds))
         risk|=(0<scale<_TINY) or scale>_MAX/(8*max(g,1.))
         dot_possible=any(a!=0 and b!=0 for a,b in zip((qx,qy,qz),(x,y,z)))

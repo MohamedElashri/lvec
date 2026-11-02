@@ -58,6 +58,23 @@ def test_reference_boost_does_not_lose_subnormal_proper_velocity(qx,px,energy):
     assert result.to_p4()==expected
 
 
+@pytest.mark.parametrize('scale',[float(np.nextafter(0.,1.)),2*float(np.nextafter(0.,1.)),
+                                 float(np.finfo(float).tiny)/8,1e-200,1e-100,1.,1e100,1e200,1e307])
+def test_reference_boost_is_independent_of_reference_scale(scale):
+    v=LVec(.1,-.2,.3,2.)
+    reference=LVec(scale,2*scale,3*scale,5*scale)
+    result=v.boost_p4(reference)
+    with localcontext() as ctx:
+        ctx.prec=100
+        mass=Decimal(11).sqrt();g=Decimal(5)/mass
+        u=tuple(Decimal(i)/mass for i in (1,2,3))
+        xyz=tuple(map(Decimal.from_float,(.1,-.2,.3)));e=Decimal(2)
+        dot=sum(a*b for a,b in zip(u,xyz));factor=e+dot/(g+1)
+        expected=tuple(float(p+a*factor) for p,a in zip(xyz,u))+(float(g*e+dot),)
+    np.testing.assert_allclose(result.to_p4(),expected,rtol=3e-14,atol=3e-14)
+    np.testing.assert_allclose(result.mass2,v.mass2,rtol=5e-14,atol=5e-14)
+
+
 @pytest.mark.parametrize('direction',[1,-1])
 @pytest.mark.parametrize('size',[1,8,9,32769])
 def test_reference_boost_recovery_from_original_inputs(size,direction):
