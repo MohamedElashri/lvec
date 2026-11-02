@@ -11,6 +11,10 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "docs"))
+import lvec
+import lvec.awkward
+from _api import CLASSES, public_members, render, signature
 
 
 class Links(HTMLParser):
@@ -69,21 +73,54 @@ def source_checks():
                                     cwd=ROOT, capture_output=True, text=True)
             assert result.returncode == 0, (path, result.stderr)
             examples += 1
-        for name, signature in re.findall(r"^```\{py:\w+\} ([\w.]+)(\([^\n]*\))$", text, re.M):
+        for kind, name, signature_text in re.findall(r"^```\{py:(\w+)\} ([\w.]+)(\([^\n]*\))?$", text, re.M):
             parts = name.split(".")
             value = importlib.import_module(parts[0])
             for part in parts[1:]:
                 value = getattr(value, part)
-            documented = ast.parse(f"def signature{signature}: pass").body[0].args
+            if kind == "property":
+                assert isinstance(value, property), (path, name)
+            if kind == "exception":
+                assert isinstance(value, type) and issubclass(value, Exception), (path, name)
+            if not signature_text:
+                continue
+            documented = ast.parse(f"def signature{signature_text}: pass").body[0].args
             actual = ast.parse(f"def signature{inspect.signature(value)}: pass").body[0].args
             if actual.args and actual.args[0].arg in ("self", "cls"):
                 actual.args.pop(0)
-            assert ast.dump(documented) == ast.dump(actual), (path, name, signature, inspect.signature(value))
+            assert ast.dump(documented) == ast.dump(actual), (path, name, signature_text, inspect.signature(value))
             signatures += 1
     return examples, signatures
+
+
+def public_api_coverage(directory):
+    pages = {p.resolve(): Links(p.read_text()) for p in directory.rglob("*.html")}
+    all_ids = set().union(*(page.ids for page in pages.values()))
+    expected = {f"lvec.{name}" for name in lvec.__all__}
+    expected |= {"lvec.Frame.name", "lvec.awkward.Array", "lvec.awkward.zip",
+                 "lvec.awkward.register_awkward", "lvec.awkward.behavior"}
+    expected |= {f"lvec.exceptions.{name}" for name in
+                 ("LVecError", "ShapeError", "InputError", "BackendError", "DependencyError")}
+    members = 0
+    for docname, (name, cls) in CLASSES.items():
+        # Rendering fails if any new public member has no authored definition.
+        content = render(ROOT, docname, "")
+        page = pages[(directory / f"{docname}.html").resolve()]
+        for member in public_members(cls):
+            target = f"lvec.{name}.{member}"
+            assert target in page.ids, (docname, target)
+            assert target in content, (docname, target)
+            expected.add(target)
+            if callable(getattr(cls, member)):
+                signature(cls, member)
+            members += 1
+    assert not (expected - all_ids), f"Missing public reference objects: {sorted(expected - all_ids)}"
+    return members, len(expected)
 
 
 if __name__ == "__main__":
     links = html_links(Path(sys.argv[1]))
     examples, signatures = source_checks()
+    members, objects = public_api_coverage(Path(sys.argv[1]))
     print(f"Checked {links} built links, {examples} Python examples, and {signatures} API signatures.")
+    print(f"Public API coverage: {members} class members; {objects} public objects including factories and aliases.")

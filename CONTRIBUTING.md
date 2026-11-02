@@ -112,6 +112,12 @@ parameters, returns, and domains. `docs/conf.py` includes `user-guide.md`,
 The documentation workflow validates pull requests and deploys `main` to
 GitHub Pages after its build and example checks pass.
 
+The complete dimensional references derive member names and signatures from
+the public classes. Shared definitions are authored in `docs/_api.py` and
+the topic reference pages. A new public member needs a definition; the build
+and coverage checker fail if its entry is missing. Backend examples belong
+in tutorials, and constructor formats have separate pages under `docs/construction`.
+
 ## Workflow dependencies and releases
 
 [Sanad](https://github.com/MohamedElashri/sanad) manages

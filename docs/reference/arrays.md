@@ -14,6 +14,7 @@ inspect the component layout with Awkward operations such as `ak.num`.
 ## Reductions and NumPy operations
 
 ```{py:method} lvec.LVec.sum(axis=None, dtype=None, out=None, keepdims=False, *, initial=None, where=None)
+:no-index:
 Sum components to form a total four-momentum. `axis=None` reduces all
 collection dimensions. For jagged events, `axis=-1` sums particles within
 each event; `keepdims=True` retains that axis. NumPy collections also accept
@@ -35,16 +36,19 @@ writable ufunc `out` is unsupported.
 ## Interchange
 
 ```{py:method} lvec.LVec.to_numpy()
+:no-index:
 Return an independent structured NumPy array for regular, complete data.
 Jagged or missing collections cannot be represented by this export.
 ```
 
 ```{py:method} lvec.LVec.to_ak_record(*, with_behavior=False)
+:no-index:
 Return Awkward coordinate records. The default is plain records;
 `with_behavior=True` attaches local LVec vector behavior.
 ```
 
 ```{py:classmethod} lvec.LVec.from_ak_record(records)
+:no-index:
 Return an owned snapshot of vector coordinate records. Extra record fields
 are ignored; coordinate fields determine the imported vector components.
 ```
@@ -83,10 +87,12 @@ zero disables retention, and bounded caches evict least recently used entries.
 use default cache settings. Cached arrays remain read-only.
 
 ```{py:method} lvec.LVec.clear_cache()
+:no-index:
 Discard cached properties. Available on spatial vector classes as well.
 ```
 
 ```{py:method} lvec.LVec.set_ttl(property_name, ttl_seconds)
+:no-index:
 Set an LVec property's lifetime in seconds on a monotonic clock.
 `None` disables expiration. `clear_expired()` removes expired entries.
 ```
