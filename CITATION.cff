@@ -4,7 +4,7 @@ message: >-
   If you use LVec in research, please cite the software and record the exact
   release version or Git commit used, along with the relevant dependencies.
 title: 'LVec: Lorentz and spatial vectors for physics analysis'
-version: 0.3.1
+version: 0.3.2
 authors:
   - family-names: Elashri
     given-names: Mohamed

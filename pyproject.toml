@@ -1,6 +1,6 @@
 [project]
 name = "lvec"
-version = "0.3.1"
+version = "0.3.2"
 description = "Lorentz and spatial vectors for particle physics with NumPy and Awkward Array"
 dynamic = ["readme"]
 requires-python = ">=3.10"
