@@ -1,0 +1,40 @@
+name: Collision-data research study
+on:
+  push:
+    branches: [study/complete-research]
+    paths: [.github/workflows/research-study.yml]
+  workflow_dispatch:
+permissions:
+  # GitHub requires push access to download assets from this draft release.
+  contents: write
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.13.12'
+      - name: Download frozen research sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/study"
+          gh release download research-input-2026-11-03 --repo "$GITHUB_REPOSITORY" --pattern complete-study-input.tar.gz --dir "$RUNNER_TEMP/study"
+          cd "$RUNNER_TEMP/study"
+          echo '62c98a72a4f97b481b8fe46030d3e29d4db4609d01b42aa302d8a47d93bacba2  complete-study-input.tar.gz' | sha256sum --check --strict
+          tar -xzf complete-study-input.tar.gz
+      - name: Validate and measure
+        run: bash "$RUNNER_TEMP/study/paper/scripts/remote_study.sh"
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: collision-study-${{ matrix.runner }}
+          path: ${{ runner.temp }}/study/paper/results/complete
+          if-no-files-found: error
+          retention-days: 90
