@@ -74,6 +74,14 @@ def physical_mask(px, py, pz, energy, rtol, atol):
     from .backends import is_ak
     kernel.outputs = 1
     if any(is_ak(c) for c in (px, py, pz, energy)):
-        from ._transform import dispatch_owned
-        return dispatch_owned(kernel, (px, py, pz, energy))
+        import awkward as ak
+
+        def apply(layouts, **kwargs):
+            if all(layout.is_numpy for layout in layouts):
+                return ak.contents.NumpyArray(kernel(*(layout.data for layout in layouts))[0])
+            if all(layout.is_unknown for layout in layouts):
+                # Even an all-absent selection must support Boolean inversion.
+                return ak.contents.NumpyArray(np.empty(0, dtype=bool))
+
+        return ak.transform(apply, px, py, pz, energy, allow_records=False)
     return kernel(*(np.asarray(c) for c in (px, py, pz, energy)))[0]
