@@ -1,0 +1,41 @@
+name: Transfer collision-study results
+on:
+  push:
+    branches: [study/complete-research]
+    paths: [.github/workflows/research-results-relay.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  relay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Copy verified result archives into draft artifact storage
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/relay"
+          cd "$RUNNER_TEMP/relay"
+          for attempt in $(seq 1 90); do
+            ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/41650788617/artifacts" --jq '.artifacts[].id')"
+            for id in $ids; do
+              if test -f "$id.uploaded"; then continue; fi
+              name="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" --jq .name)"
+              case "$name" in collision-study-ubuntu-24.04|collision-study-ubuntu-24.04-arm) ;; *) continue ;; esac
+              gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$name.zip"
+              digest="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" --jq '.digest | ltrimstr("sha256:")')"
+              echo "$digest  $name.zip" > "$name.zip.sha256"
+              sha256sum --check --strict "$name.zip.sha256"
+              gh release upload research-input-2026-11-03 "$name.zip" "$name.zip.sha256" --repo "$GITHUB_REPOSITORY" --clobber
+              touch "$id.uploaded"
+              echo "Transferred $name with verified SHA256."
+            done
+            count=0
+            for marker in *.uploaded; do if test -f "$marker"; then count=$((count+1)); fi; done
+            if test "$count" = 2; then exit 0; fi
+            sleep 20
+          done
+          echo 'The remaining result artifact is not yet available.' >&2
+          exit 1
