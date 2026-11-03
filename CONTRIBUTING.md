@@ -37,6 +37,7 @@ backend is absent.
 | Public vectors, observables, and named frames | `lvec/lvec.py`, `lvec/vectors.py`, `lvec/frame.py` |
 | Shared mathematical API and NumPy protocols | `lvec/_protocol.py` |
 | Coordinate factories and projections | `lvec/_coordinates.py` |
+| Particle-domain validation and tolerance boundaries | `lvec/_validation.py` |
 | Array validation, ownership, and optional backend | `lvec/backends.py`, `lvec/utils.py` |
 | Native Awkward record behavior | `lvec/awkward.py` |
 | Adaptive arithmetic and exact accumulation | `lvec/_adaptive.py`, `lvec/_exact.py` |

@@ -64,7 +64,8 @@ def obj(**coordinates):
             energy=np.hypot(momentum,mass)
             if backend_any(mass<0):
                 from ._protocol import signed_norm
-                negative=np.maximum(signed_norm(momentum,mass,0.*mass,0.*mass),0.)
+                # Preserve all original Cartesian terms before cancellation.
+                negative=np.maximum(-signed_norm(mass,x,y,z),0.)
                 energy=backend_where(mass<0,negative,energy,lib)
     return LVec(x,y,z,energy)
 
