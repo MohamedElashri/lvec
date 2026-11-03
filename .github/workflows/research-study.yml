@@ -22,6 +22,17 @@ jobs:
       - uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.13.12'
+      - name: Prepare the published CERN CA chain
+        run: |
+          # Per-job CA bundle; TLS and hostname verification remain enabled.
+          cp /etc/ssl/certs/ca-certificates.crt "$RUNNER_TEMP/cern-ca.pem"
+          for generation in 2 3; do
+            curl --fail --location --retry 3 "https://ca.cern.ch/cafiles/certificates/CERN%20Root%20Certification%20Authority%20${generation}.crt" --output "$RUNNER_TEMP/cern-${generation}.der"
+            openssl x509 -inform DER -in "$RUNNER_TEMP/cern-${generation}.der" -out "$RUNNER_TEMP/cern-${generation}.pem"
+            openssl x509 -in "$RUNNER_TEMP/cern-${generation}.pem" -noout -subject -issuer -fingerprint -sha256
+            cat "$RUNNER_TEMP/cern-${generation}.pem" >> "$RUNNER_TEMP/cern-ca.pem"
+          done
+          echo "SSL_CERT_FILE=$RUNNER_TEMP/cern-ca.pem" >> "$GITHUB_ENV"
       - name: Verify CERN TLS with the system trust store
         run: |
           python - <<'PY'
