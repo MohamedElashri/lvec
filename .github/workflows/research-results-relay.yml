@@ -1,4 +1,5 @@
 name: Transfer collision-study results
+# Dependency-free workflow recorded in actions.lock.
 on:
   push:
     branches: [study/complete-research]
