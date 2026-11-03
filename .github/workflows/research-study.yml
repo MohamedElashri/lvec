@@ -28,7 +28,8 @@ jobs:
           cp /etc/ssl/certs/ca-certificates.crt "$RUNNER_TEMP/cern-ca.pem"
           for generation in 2 3; do
             curl --fail --location --retry 3 "https://ca.cern.ch/cafiles/certificates/CERN%20Root%20Certification%20Authority%20${generation}.crt" --output "$RUNNER_TEMP/cern-${generation}.der"
-            openssl x509 -inform DER -in "$RUNNER_TEMP/cern-${generation}.der" -out "$RUNNER_TEMP/cern-${generation}.pem"
+            if [ "$generation" = 2 ]; then format=DER; else format=PEM; fi
+            openssl x509 -inform "$format" -in "$RUNNER_TEMP/cern-${generation}.der" -out "$RUNNER_TEMP/cern-${generation}.pem"
             openssl x509 -in "$RUNNER_TEMP/cern-${generation}.pem" -noout -subject -issuer -fingerprint -sha256
             cat "$RUNNER_TEMP/cern-${generation}.pem" >> "$RUNNER_TEMP/cern-ca.pem"
           done
