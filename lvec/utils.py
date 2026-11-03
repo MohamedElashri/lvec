@@ -29,6 +29,35 @@ def small_invariant(px,py,pz,energy,*,squared=False):
         result.flat[index]=evaluate(*(float(c.flat[index]) for c in (px,py,pz,energy)))
     return result
 
+
+def gamma_result(px, py, pz, energy, lib):
+    """Use the recovered signed mass without retaining another cached property."""
+    if lib == 'np' and not isinstance(energy, np.ndarray):
+        if energy <= 0 or not math.isfinite(energy):
+            return math.nan
+        mass = small_invariant(px, py, pz, energy)
+        if mass < 0 or math.isnan(mass):
+            return math.nan
+        return energy / mass if mass else math.inf
+
+    def kernel(x, y, z, e):
+        with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+            if e.size <= 8:
+                mass = small_invariant(x, y, z, e)
+            else:
+                squared = e*e - (x*x + y*y + z*z)
+                mass = invariant_result(squared, e, x, y, z, 'np')
+            valid = (e > 0) & np.isfinite(e) & (mass >= 0)
+            np.divide(e, mass, out=mass, where=valid)
+            mass[~valid] = np.nan
+            return (mass,)
+
+    kernel.outputs = 1
+    if lib == 'ak':
+        from ._transform import dispatch_owned
+        return dispatch_owned(kernel, (px, py, pz, energy))
+    return kernel(px, py, pz, energy)[0]
+
 def ensure_array(*args):
     """Normalize components, broadcasting scalars to a common array structure.
 

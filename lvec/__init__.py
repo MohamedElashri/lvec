@@ -20,4 +20,4 @@ def register_awkward():
 __all__ = ['LVec', 'Vector2D', 'Vector3D', 'Vector4D', 'Momentum2D',
            'Momentum3D', 'Momentum4D', 'Frame', 'ShapeError',
            'obj', 'array', 'arr', 'Array', 'awk', 'zip', 'register_awkward']
-__version__ = '0.3.1'
+__version__ = '0.3.2'

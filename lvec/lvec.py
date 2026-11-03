@@ -3,7 +3,7 @@ from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_atan2,
                         backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, own_plain_components, freeze_array, normalize_scalar)
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
-                    scaled_invariant, invariant_result, awkward_invariant, euclidean_result, dot_result, small_invariant)
+                    invariant_result, awkward_invariant, euclidean_result, dot_result, small_invariant, gamma_result)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
 from .caching import PropertyCache
 from .frame import Frame
@@ -157,23 +157,8 @@ class LVec(LorentzAPI):
         """
         if not np.isfinite(rtol) or not np.isfinite(atol) or rtol < 0 or atol < 0:
             raise ValueError("Particle validation tolerances must be finite and non-negative")
-        finite = (np.isfinite(self.px) & np.isfinite(self.py)
-                  & np.isfinite(self.pz) & np.isfinite(self.E))
-        if rtol == 0:
-            norm = self.mass2
-            allowed = norm >= -atol
-            if atol == 0:
-                # A negative squared invariant may round to negative zero.
-                allowed = allowed & ~np.signbit(norm)
-            return finite & (self.E >= 0) & allowed
-        with np.errstate(invalid='ignore', over='ignore', under='ignore', divide='ignore'):
-            scale, norm = scaled_invariant(self.E, self.px, self.py, self.pz, self._lib)
-            denominator = backend_where(scale == 0, 1., scale, self._lib)
-            e2 = (self.E / denominator)**2
-            p2 = ((self.px / denominator)**2 + (self.py / denominator)**2
-                  + (self.pz / denominator)**2)
-            tolerance = (atol / denominator) / denominator + rtol * np.maximum(e2, p2)
-            return finite & (self.E >= 0) & (norm >= -tolerance)
+        from ._validation import physical_mask
+        return physical_mask(self.px, self.py, self.pz, self.E, rtol, atol)
 
     def validate_particle(self, rtol=1e-12, atol=0.0):
         """Raise InputError for invalid particle momenta; return self otherwise.
@@ -704,16 +689,7 @@ class LVec(LorentzAPI):
         nonpositive-energy vectors have NaN gamma; missing values stay missing.
         """
         def calculate():
-            momentum = np.hypot(np.hypot(self.px, self.py), self.pz)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                # Factoring (E-p)*(E+p)/E**2 avoids overflowing squared
-                # components and preserves the representable E-p difference.
-                inverse_gamma2 = (np.divide(self.E - momentum, self.E)
-                                  * (1 + np.divide(momentum, self.E)))
-                factor = np.sqrt(backend_where(inverse_gamma2 >= 0,
-                                              inverse_gamma2, np.nan, self._lib))
-                return backend_where(self.E > 0, np.divide(1., factor),
-                                     np.nan, self._lib)
+            return gamma_result(self.px, self.py, self.pz, self.E, self._lib)
         return self._get_cached('gamma', calculate, ['px', 'py', 'pz', 'E'])
 
     def delta_phi(self, other):
