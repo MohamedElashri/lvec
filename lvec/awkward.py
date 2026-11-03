@@ -19,7 +19,41 @@ class _TransientCache:
     _cache_intermediates=False
 
 
+def _float64(value):
+    if isinstance(value,ak.Array):
+        layout=value.layout
+        while layout.is_list or layout.is_option or layout.is_indexed:
+            layout=layout.content
+        if layout.is_numpy and layout.dtype==np.dtype('float64'):
+            return value
+        return ak.values_astype(value,np.float64)
+    if isinstance(value,np.ndarray):
+        return value.astype(np.float64,copy=False)
+    return float(value)
+
+
 class _Borrowed:
+    def __add__(self, other):
+        self._check_other(other)
+        return self._new(*(a + b for a, b in builtins.zip(
+            self._components(), other._components())))
+
+    def __sub__(self, other):
+        self._check_other(other)
+        return self._new(*(a - b for a, b in builtins.zip(
+            self._components(), other._components())))
+
+    def __mul__(self, factor):
+        if isinstance(factor, PlanarAPI):
+            raise TypeError("Use dot or @ for vector products")
+        # Array-valued factors may introduce a new structure or dtype.
+        return self._new(*(factor * c for c in self._components()))
+
+    __rmul__ = __mul__
+
+    def __getitem__(self, index):
+        return self._new(*(c[index] for c in self._components()))
+
     def _new_matching(self,*components,_trusted_awkward=False):
         if all(isinstance(c,ak.Array) for c in components):
             return _borrowed(type(self),components,'ak')
@@ -29,7 +63,7 @@ class _Borrowed:
         # The result is immediately wrapped as native records. Preserve their
         # view semantics instead of round-tripping through owned snapshots.
         *values,lib=ensure_array(*components)
-        return _borrowed(type(self),values,lib)
+        return _borrowed(type(self),[_float64(value) for value in values],lib)
 
     def _get_cached(self,key,func,*args,**kwargs):
         return func()
@@ -51,11 +85,29 @@ class _Borrowed4D(_Borrowed,LVec):
 
 
 def _view(record,dimension):
+    # A record with scalar float64 fields has one common list/index/mask
+    # skeleton. Its schema proves the type and shape checks below without
+    # inspecting values or casting every projection again. Per-field options,
+    # unions, inner dimensions, and semantic leaf types retain normalization.
+    layout=record.layout.array if isinstance(record,ak.Record) else record.layout
+    while layout.is_list or layout.is_option or layout.is_indexed:
+        layout=layout.content
+    if layout.is_record:
+        fields=layout.fields
+        names=(('px','py','pz','E') if 'px' in fields else ('x','y','z','t'))[:dimension]
+        contents=[layout.content(name) for name in names if name in fields]
+        if len(contents)==dimension and all(field.is_unknown or (
+                field.is_numpy and field.dtype==np.dtype('float64')
+                and not field.inner_shape and not field.parameters) for field in contents):
+            values=[record[name] for name in names]
+            lib='np' if isinstance(record,ak.Record) else 'ak'
+            if lib=='np':values=[float(value) for value in values]
+            return _borrowed({2:_Borrowed2D,3:_Borrowed3D,4:_Borrowed4D}[dimension],values,lib)
     fields=ak.fields(record)
     names=('px','py','pz','E') if 'px' in fields else ('x','y','z','t')
     values=[record[n] for n in names[:dimension]]
     *values,lib=ensure_array(*values)
-    values=[ak.values_astype(c,np.float64) if isinstance(c,ak.Array) else float(c) for c in values]
+    values=[_float64(c) for c in values]
     cls={2:_Borrowed2D,3:_Borrowed3D,4:_Borrowed4D}[dimension]
     return _borrowed(cls,values,lib)
 
