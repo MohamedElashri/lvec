@@ -15,11 +15,21 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
+    env:
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
     steps:
       - uses: actions/checkout@v4.4.0
       - uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.13.12'
+      - name: Verify CERN TLS with the system trust store
+        run: |
+          python - <<'PY'
+          import urllib.request
+          url = "https://eospublic.cern.ch/eos/opendata/lhcb/AntimatterMatters2017/data/B2HHH_MagnetUp.root"
+          with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=60) as response:
+              print("CERN TLS verification:", response.status)
+          PY
       - name: Download frozen research sources
         env:
           GH_TOKEN: ${{ github.token }}
