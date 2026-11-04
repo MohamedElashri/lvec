@@ -5,58 +5,62 @@ on:
     paths: [.github/workflows/research-study.yml]
   workflow_dispatch:
 permissions:
-  # GitHub requires push access to download assets from this draft release.
   contents: write
 jobs:
   measure:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            host: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            host: aarch64-linux
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
-    env:
-      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4.4.0
+        with:
+          ref: v0.3.2
+          fetch-depth: 0
+          path: library
       - uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.13.12'
-      - name: Prepare the published CERN CA chain
+      - name: Prepare clean released library sources
         run: |
-          # Per-job CA bundle; TLS and hostname verification remain enabled.
+          git -C library worktree add --detach /tmp/lvec-release-v0.3.2 v0.3.2
+          git -C library worktree add --detach /tmp/lvec-paper-v0.3.1 v0.3.1
+      - name: Prepare verified CERN trust store
+        run: |
           cp /etc/ssl/certs/ca-certificates.crt "$RUNNER_TEMP/cern-ca.pem"
           for generation in 2 3; do
-            curl --fail --location --retry 3 "https://ca.cern.ch/cafiles/certificates/CERN%20Root%20Certification%20Authority%20${generation}.crt" --output "$RUNNER_TEMP/cern-${generation}.der"
+            curl --fail --location --retry 3 "https://ca.cern.ch/cafiles/certificates/CERN%20Root%20Certification%20Authority%20${generation}.crt" --output "$RUNNER_TEMP/cern-${generation}.crt"
             if [ "$generation" = 2 ]; then format=DER; else format=PEM; fi
-            openssl x509 -inform "$format" -in "$RUNNER_TEMP/cern-${generation}.der" -out "$RUNNER_TEMP/cern-${generation}.pem"
-            openssl x509 -in "$RUNNER_TEMP/cern-${generation}.pem" -noout -subject -issuer -fingerprint -sha256
+            openssl x509 -inform "$format" -in "$RUNNER_TEMP/cern-${generation}.crt" -out "$RUNNER_TEMP/cern-${generation}.pem"
             cat "$RUNNER_TEMP/cern-${generation}.pem" >> "$RUNNER_TEMP/cern-ca.pem"
           done
           echo "SSL_CERT_FILE=$RUNNER_TEMP/cern-ca.pem" >> "$GITHUB_ENV"
-      - name: Verify CERN TLS with the system trust store
-        run: |
-          python - <<'PY'
-          import urllib.request
-          url = "https://eospublic.cern.ch/eos/opendata/lhcb/AntimatterMatters2017/data/B2HHH_MagnetUp.root"
-          with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=60) as response:
-              print("CERN TLS verification:", response.status)
-          PY
-      - name: Download frozen research sources
+      - name: Download and verify collection code only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/study"
-          gh release download research-input-2026-11-03 --repo "$GITHUB_REPOSITORY" --pattern complete-study-input.tar.gz --dir "$RUNNER_TEMP/study"
+          gh release download research-input-v032-20261104 --repo "$GITHUB_REPOSITORY" --pattern collection-code.tar.gz --dir "$RUNNER_TEMP/study"
           cd "$RUNNER_TEMP/study"
-          echo '62c98a72a4f97b481b8fe46030d3e29d4db4609d01b42aa302d8a47d93bacba2  complete-study-input.tar.gz' | sha256sum --check --strict
-          tar -xzf complete-study-input.tar.gz
-      - name: Validate and measure
-        run: bash "$RUNNER_TEMP/study/paper/scripts/remote_study.sh"
+          echo 'f7ba4aada8fb0f53b8e64afbe5e4299670849b5b64016263f5e85a14bd96e50e  collection-code.tar.gz' | sha256sum --check --strict
+          tar -xzf collection-code.tar.gz
+          sha256sum --check --strict collection-files.sha256
+          python -m pip install -r paper/requirements.txt
+      - name: Validate and measure all research workloads
+        env:
+          LVEC_INPUT_SHA256: f7ba4aada8fb0f53b8e64afbe5e4299670849b5b64016263f5e85a14bd96e50e
+        run: |
+          python "$RUNNER_TEMP/study/paper/scripts/rerun_study.py" --host '${{ matrix.host }}' --output "$RUNNER_TEMP/results/${{ matrix.host }}"
       - uses: actions/upload-artifact@v4.6.2
         if: always()
         with:
-          name: collision-study-${{ matrix.runner }}
-          path: ${{ runner.temp }}/study/paper/results/complete
+          name: v032-rerun-${{ matrix.host }}
+          path: ${{ runner.temp }}/results
           if-no-files-found: error
           retention-days: 90
