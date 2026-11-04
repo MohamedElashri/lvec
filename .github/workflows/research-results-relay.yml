@@ -1,42 +1,44 @@
-name: Transfer collision-study results
-# Dependency-free workflow recorded in actions.lock.
+name: Retrieve completed native research results
 on:
   push:
     branches: [study/complete-research]
     paths: [.github/workflows/research-results-relay.yml]
+  workflow_dispatch:
 permissions:
-  contents: write
   actions: read
+  contents: write
+concurrency: research-result-relay
 jobs:
   relay:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Copy verified result archives into draft artifact storage
+      - name: Relay existing observations through an unpublished release
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/relay"
-          cd "$RUNNER_TEMP/relay"
-          for attempt in $(seq 1 90); do
-            ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/41650788617/artifacts" --jq '.artifacts[].id')"
-            for id in $ids; do
-              if test -f "$id.uploaded"; then continue; fi
-              name="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" --jq .name)"
-              case "$name" in collision-study-ubuntu-24.04|collision-study-ubuntu-24.04-arm) ;; *) continue ;; esac
-              gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$name.zip"
-              digest="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" --jq '.digest | ltrimstr("sha256:")')"
-              echo "$digest  $name.zip" > "$name.zip.sha256"
-              sha256sum --check --strict "$name.zip.sha256"
-              gh release upload research-input-2026-11-03 "$name.zip" "$name.zip.sha256" --repo "$GITHUB_REPOSITORY" --clobber
-              touch "$id.uploaded"
-              echo "Transferred $name with verified SHA256."
-            done
-            count=0
-            for marker in *.uploaded; do if test -f "$marker"; then count=$((count+1)); fi; done
-            if test "$count" = 2; then exit 0; fi
-            sleep 20
+          tag=research-output-v032-20261104
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+          for host in aarch64-linux x86_64-linux; do
+            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/41824431817/artifacts" --jq ".artifacts[] | select(.name == \"v032-rerun-${host}\") | .id")
+            if [ -z "$artifact" ]; then
+              echo "$host has no completed artifact yet"
+              continue
+            fi
+            destination="$RUNNER_TEMP/$host"
+            gh run download 41824431817 --repo "$GITHUB_REPOSITORY" --name "v032-rerun-$host" --dir "$destination"
+            test "$(cat "$destination/$host/COMPLETE")" = 'Library SHA256: e5c523e0bf2766d13398e596cb985c9065dacb18181cf8a6c4d546d6ad1e6174'
+            python - "$destination" <<'PY'
+          from pathlib import Path
+          import sys
+          forbidden={'.root','.npz','.json'}
+          assert not any(p.suffix in forbidden for p in Path(sys.argv[1]).rglob('*') if p.is_file())
+          PY
+            tar -czf "$RUNNER_TEMP/$host.tar.gz" -C "$destination" "$host"
+            (cd "$RUNNER_TEMP" && sha256sum "$host.tar.gz" > "$host.tar.gz.sha256")
+            test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/$host.tar.gz" "$RUNNER_TEMP/$host.tar.gz.sha256" --clobber
+            echo "Relayed $host from existing artifact $artifact"
           done
-          echo 'The remaining result artifact is not yet available.' >&2
-          exit 1
