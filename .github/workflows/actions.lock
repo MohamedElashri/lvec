@@ -20,6 +20,10 @@ workflows:
         - 'actions/setup-python@v5.6.0'
         - 'actions/upload-artifact@v4.6.2'
     '.github/workflows/research-results-relay.yml': []
+    '.github/workflows/research-sessions.yml':
+        - 'actions/checkout@v4.4.0'
+        - 'actions/setup-python@v5.6.0'
+        - 'actions/upload-artifact@v4.6.2'
     '.github/workflows/research-study.yml':
         - 'actions/checkout@v4.4.0'
         - 'actions/setup-python@v5.6.0'

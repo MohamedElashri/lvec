@@ -1,3 +1,4 @@
+# Dependencies are pinned in actions.lock.
 name: Targeted research sessions
 on:
   push:
