@@ -15,20 +15,20 @@ reference boosts reuse the LVec reference's cached mass.
 
 | Workload | NumPy LVec | NumPy vector | Jagged LVec | Jagged vector |
 | --- | ---: | ---: | ---: | ---: |
-| Uncached mass | $0.316\pm0.003$ | $0.431\pm0.038$ | $3.269\pm0.434$ | $4.869\pm0.958$ |
-| Four-vector normalization | $0.517\pm0.010$ | $1.809\pm0.072$ | $5.164\pm0.177$ | $10.061\pm1.063$ |
-| $\beta$ boost | $0.795\pm0.056$ | $1.627\pm0.068$ | $4.523\pm0.341$ | $7.530\pm0.098$ |
-| $\gamma$ boost, per-particle parameters | $0.889\pm0.028$ | $0.978\pm0.046$ | $6.754\pm0.443$ | $5.348\pm0.232$ |
-| Boost from a shared reference | $1.336\pm0.013$ | $1.560\pm0.019$ | $6.371\pm0.295$ | $7.133\pm0.241$ |
-| Boost from per-particle references | $1.768\pm0.123$ | $3.399\pm0.055$ | $10.110\pm0.315$ | $15.104\pm0.753$ |
-| Euler rotation, per-particle angles | $1.466\pm0.052$ | $2.122\pm0.062$ | $9.438\pm0.439$ | $10.206\pm0.208$ |
-| Quaternion rotation, per-particle parameters | $1.925\pm0.046$ | $2.091\pm0.041$ | $9.431\pm0.709$ | $9.044\pm0.202$ |
-| Dense matrix, per-particle coefficients | $1.480\pm0.062$ | $1.609\pm0.002$ | $9.868\pm0.285$ | $8.233\pm0.605$ |
-| Add, boost, calculate mass | $1.322\pm0.036$ | $2.674\pm0.048$ | $8.829\pm0.392$ | $14.535\pm0.478$ |
+| Uncached mass | $0.321\pm0.024$ | $0.449\pm0.021$ | $3.360\pm0.130$ | $4.592\pm0.134$ |
+| Four-vector normalization | $0.579\pm0.023$ | $2.163\pm0.102$ | $5.217\pm0.210$ | $11.571\pm0.996$ |
+| $\beta$ boost | $0.948\pm0.066$ | $1.815\pm0.051$ | $4.935\pm0.307$ | $8.142\pm0.504$ |
+| $\gamma$ boost, per-particle parameters | $1.011\pm0.083$ | $1.130\pm0.026$ | $7.702\pm1.423$ | $5.970\pm0.498$ |
+| Boost from a shared reference | $1.396\pm0.043$ | $1.852\pm0.074$ | $6.765\pm0.923$ | $7.948\pm0.213$ |
+| Boost from per-particle references | $2.078\pm0.078$ | $3.949\pm0.097$ | $11.467\pm0.862$ | $18.665\pm1.396$ |
+| Euler rotation, per-particle angles | $1.600\pm0.031$ | $2.490\pm0.084$ | $9.711\pm0.668$ | $11.197\pm0.401$ |
+| Quaternion rotation, per-particle parameters | $2.176\pm0.109$ | $2.552\pm0.062$ | $10.419\pm0.577$ | $10.259\pm0.828$ |
+| Dense matrix, per-particle coefficients | $1.670\pm0.021$ | $1.860\pm0.038$ | $10.622\pm1.022$ | $8.471\pm0.379$ |
+| Add, boost, calculate mass | $1.587\pm0.099$ | $3.224\pm0.184$ | $12.375\pm1.812$ | $16.210\pm1.099$ |
 
-Native jagged construction takes $0.243\pm0.001$ ms for LVec and
-$0.261\pm0.013$ ms for vector. Owned LVec construction takes
-$1.668\pm0.165$ ms, including copies of numerical buffers.
+Native jagged construction takes $0.250\pm0.003$ ms for LVec and
+$0.250\pm0.003$ ms for vector. Owned LVec construction takes
+$1.758\pm0.110$ ms, including copies of numerical buffers.
 
 Jagged $\gamma$ boosts and dense matrices remain slower than vector.
 Quaternion rotations are close within the observed dispersion. MAD describes
@@ -41,13 +41,13 @@ sorted filenames and contents of `lvec/*.py` and `benchmarks/*.py`.
 
 | Item | Value |
 | --- | --- |
-| Measured source | `3cd0fdb18aa2fc0f95752b25157f27d878b25ba1` |
-| Date | 2026-11-02, Europe/Zurich |
+| Measured source | `c1866cfe6f64a9eb60afad76c9935a7ad5bfd43b` |
+| Date | 2026-11-05, Europe/Zurich |
 | Environment | Python 3.13.12; NumPy 2.5.4; Awkward 2.14.0; vector 1.9.0 |
 | Hardware | Apple M1, 8 logical CPUs, 16 GiB; macOS 27.2 arm64 |
 | Sampling | 3 fresh processes, 7 samples each; 2 warmups; 20 ms target per sample |
 | Controls | Seed 20261101; numeric runtime threads 1; `PYTHONHASHSEED=0`; affinity/power not controlled |
-| Library SHA256 | `bfca9a44d3a1a0422cf6b9df0a43730647e08211d728d88a765f02567d56c446` |
+| Library SHA256 | `fb9bd5d7bf386336aae87fad9d252bbad09670c727bfd3ef53d16c2538c2d251` |
 | Framework SHA256 | `ed6836eadd688560fe06fdc3136ea6750cebf9a7db22fd042847f7b219308268` |
 
 Setup and validation are outside timing. Cold cases include cache clearing;
