@@ -1,0 +1,74 @@
+name: Targeted research sessions
+on:
+  push:
+    branches: [study/complete-research]
+    paths: [.github/workflows/research-sessions.yml]
+permissions:
+  contents: read
+env:
+  SESSION: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            host: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            host: aarch64-linux
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4.4.0
+        with:
+          path: control
+      - uses: actions/checkout@v4.4.0
+        with:
+          ref: v0.3.2
+          path: library
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.13.12'
+      - name: Verify collection code and released sources
+        run: |
+          test "$(git -C library rev-parse HEAD)" = 69569ac393a280bd914fd5f68cc7e438c0adf785
+          mkdir -p "$RUNNER_TEMP/study"
+          cp control/research-inputs/session-v032/collection-code.tar.gz "$RUNNER_TEMP/study/"
+          cd "$RUNNER_TEMP/study"
+          echo '20ed2f48ceb14f31c21f04ddafc99aaa6e477f1b07b74195e208fc0914c2cb1f  collection-code.tar.gz' | sha256sum --check --strict
+          tar -xzf collection-code.tar.gz
+          sha256sum --check --strict collection-files.sha256
+          python -m pip install -r paper/requirements.txt
+          echo "LVEC_PAPER_SOURCE=$GITHUB_WORKSPACE/library" >> "$GITHUB_ENV"
+      - name: Prepare verified CERN trust store
+        run: |
+          cp /etc/ssl/certs/ca-certificates.crt "$RUNNER_TEMP/cern-ca.pem"
+          for generation in 2 3; do
+            curl --fail --location --retry 3 "https://ca.cern.ch/cafiles/certificates/CERN%20Root%20Certification%20Authority%20${generation}.crt" --output "$RUNNER_TEMP/cern-${generation}.crt"
+            if [ "$generation" = 2 ]; then format=DER; else format=PEM; fi
+            openssl x509 -inform "$format" -in "$RUNNER_TEMP/cern-${generation}.crt" -out "$RUNNER_TEMP/cern-${generation}.pem"
+            cat "$RUNNER_TEMP/cern-${generation}.pem" >> "$RUNNER_TEMP/cern-ca.pem"
+          done
+          echo "SSL_CERT_FILE=$RUNNER_TEMP/cern-ca.pem" >> "$GITHUB_ENV"
+      - name: Authenticate inputs and validate targeted reconstructions
+        run: |
+          cd "$RUNNER_TEMP/study"
+          python paper/scripts/lhcb_data.py --download
+          python paper/scripts/cms_data.py --download
+          python paper/scripts/session_study.py prepare --host '${{ matrix.host }}' --source "$GITHUB_WORKSPACE/library" --output "$RUNNER_TEMP/results/${{ matrix.host }}/preparation-$SESSION"
+      - name: Collect one independent session
+        run: |
+          cd "$RUNNER_TEMP/study"
+          python paper/scripts/session_study.py collect --host '${{ matrix.host }}' --source "$GITHUB_WORKSPACE/library" --session "$SESSION" --preparation "$RUNNER_TEMP/results/${{ matrix.host }}/preparation-$SESSION" --output "$RUNNER_TEMP/results/${{ matrix.host }}/session-$SESSION"
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: v032-confirmatory-${{ env.SESSION }}-${{ matrix.host }}
+          path: ${{ runner.temp }}/results
+          if-no-files-found: error
+          retention-days: 90
