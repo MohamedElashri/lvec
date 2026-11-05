@@ -9,6 +9,8 @@ already rounded away in the supplied components.
 
 An ordinary evaluation of $E^2-p_x^2-p_y^2-p_z^2$ can overflow or cancel.
 LVec detects risky cases and uses a more accurate accumulation path.
+Signed mass uses a wider cancellation-recovery region than mass squared:
+taking a square root can amplify an otherwise small invariant error.
 
 ```{doctest}
 >>> from lvec import LVec

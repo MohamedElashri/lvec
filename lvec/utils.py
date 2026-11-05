@@ -9,15 +9,20 @@ from .exceptions import ShapeError, BackendError
 from ._exact import accurate_result
 
 _CANCELLATION_RTOL = math.sqrt(np.finfo(np.float64).eps)
+# Signed-root error grows as eps * E**2 / abs(mass). Recover before the
+# ordinary squared-sum error is amplified beyond a component-scaled root
+# accuracy target. Mass squared keeps its own, less restrictive trigger.
+_MASS_CANCELLATION_RTOL = 1. / 4096.
 
 
 def small_invariant(px,py,pz,energy,*,squared=False):
     """Avoid array-kernel setup for scalar and very short owned float64 data."""
     from ._exact import _product_sum,_rounded_float
     tiny=np.finfo(float).tiny
+    rtol = _CANCELLATION_RTOL if squared else _MASS_CANCELLATION_RTOL
     def evaluate(x,y,z,e):
         value=e*e-(x*x+y*y+z*z)
-        bound=(_CANCELLATION_RTOL*abs(e))*abs(e)
+        bound=(rtol*abs(e))*abs(e)
         if (not math.isfinite(value) or abs(value)<=bound or abs(value)<tiny) and all(math.isfinite(c) for c in (x,y,z,e)):
             integer,power=_product_sum((x,y,z,e))
             return _rounded_float(integer,power,root=not squared)
@@ -318,10 +323,11 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
     roots can still be finite and are calculated without squaring the scale.
     """
     tiny = np.finfo(np.float64).tiny
+    rtol = _CANCELLATION_RTOL if squared else _MASS_CANCELLATION_RTOL
     lower, upper = _bounds(m2)
     e_min, e_max = _bounds(E)
     largest_energy = max(abs(float(e_min)), abs(float(e_max)))
-    bound = (_CANCELLATION_RTOL*largest_energy)*largest_energy
+    bound = (rtol*largest_energy)*largest_energy
     if ((lower == 0 and upper == 0) or not np.isfinite(lower) or not np.isfinite(upper)):
         if _null_axis(E, px, py, pz) is not None:
             return np.zeros_like(m2)
@@ -340,7 +346,7 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
         return np.sqrt(m2) if lower > 0 else -np.sqrt(-m2)
 
     with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-        local_bound = (_CANCELLATION_RTOL*abs(E))*abs(E)
+        local_bound = (rtol*abs(E))*abs(E)
         exceptional = (~np.isfinite(m2) | (abs(m2) <= local_bound)
                        | ((m2 > -tiny) & (m2 < tiny)))
     with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
