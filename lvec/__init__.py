@@ -23,4 +23,4 @@ __all__ = ['LVec', 'Vector2D', 'Vector3D', 'Vector4D', 'Momentum2D',
            'obj', 'array', 'arr', 'Array', 'awk', 'zip', 'register_awkward',
            'CoordinateWarning', 'invariant_policy', 'set_invariant_policy',
            'get_invariant_policy']
-__version__ = '0.3.4'
+__version__ = '0.3.5'

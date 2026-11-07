@@ -89,14 +89,19 @@ class PropertyCache:
         expiry = self._expiry_times.get(key)
         return expiry is not None and time.monotonic() >= expiry
 
+    def _variants(self, prop):
+        # Values for a non-default invariant policy are stored under 'name#policy'.
+        return [key for key in self._values if key == prop or key.startswith(prop + '#')]
+
     def set_ttl(self, key, ttl_seconds):
         """Set a persistent TTL, including before first access; None disables it."""
         self._validate_ttl(ttl_seconds)
         self._ttl_overrides[key] = ttl_seconds
-        if key in self._values and ttl_seconds is not None:
-            self._expiry_times[key] = time.monotonic() + ttl_seconds
-        else:
-            self._expiry_times.pop(key, None)
+        for variant in self._variants(key) or [key]:
+            if variant in self._values and ttl_seconds is not None:
+                self._expiry_times[variant] = time.monotonic() + ttl_seconds
+            else:
+                self._expiry_times.pop(variant, None)
 
     def get_cached(self, key, compute_func, dependencies=None, ttl=None):
         """Return a valid cached value, or compute and optionally store it."""
@@ -118,7 +123,7 @@ class PropertyCache:
         if self._max_size == 0:
             return value
         duration = self._ttl_overrides.get(
-            key, ttl if ttl is not None else self._default_ttl
+            key.split('#', 1)[0], ttl if ttl is not None else self._default_ttl
         )
         self._validate_ttl(duration)
         self._values[key] = value
@@ -145,10 +150,11 @@ class PropertyCache:
 
     def clear_property(self, prop):
         """Drop one cached value without changing its TTL policy or statistics."""
-        self._values.pop(prop, None)
-        if self._lru_order is not None:
-            self._lru_order.pop(prop, None)
-        self._expiry_times.pop(prop, None)
+        for key in self._variants(prop) or [prop]:
+            self._values.pop(key, None)
+            if self._lru_order is not None:
+                self._lru_order.pop(key, None)
+            self._expiry_times.pop(key, None)
 
     def clear_expired(self):
         """Remove expired values and return their count."""

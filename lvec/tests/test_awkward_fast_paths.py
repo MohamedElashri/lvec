@@ -148,6 +148,7 @@ def shaped(ak, values, kind):
     return ak.Array([[values[:3].tolist(), []], None, [[None] + values[3:].tolist()]])
 
 
+@pytest.mark.usefixtures('accurate_policy')
 @pytest.mark.parametrize('kind', ['regular', 'lists', 'sliced', 'list_array', 'indexed',
                                  'byte_mask', 'bit_mask', 'missing', 'deep'])
 def test_mass_leaf_kernel_matches_exact_oracles_and_preserves_structure(ak, kind):
@@ -195,6 +196,7 @@ def test_mass_leaf_kernel_handles_unknown_empty_and_all_missing_arrays(ak, value
     assert ak.to_list(v.mass2) == values
 
 
+@pytest.mark.usefixtures('accurate_policy')
 def test_mass_leaf_kernel_preserves_nonfinite_values(ak):
     v = LVec(ak.Array([[np.nan, np.inf, 0., 1e200]]), 0., 0.,
              ak.Array([[1., np.inf, np.inf, 1e200]]))

@@ -96,6 +96,7 @@ def test_all_coordinate_families_and_projections(dimension,backend):
         np.testing.assert_allclose(float(lvec.obj(x=3.,y=4.,z=5.).eta),np.arcsinh(1.))
 
 
+@pytest.mark.usefixtures('accurate_policy')
 def test_coordinate_aliases_signed_mass_and_exports():
     import lvec
     v=lvec.obj(pt=2.,eta=0.,phi=0.,mass=-1.)
@@ -160,6 +161,7 @@ def test_spatial_geometry_analytic_and_extreme():
     assert LVec(1.,0.,0.,2.).deltaR(y)==pytest.approx(np.pi/2)
 
 
+@pytest.mark.usefixtures('accurate_policy')
 def test_causal_classification_and_null_units():
     v=LVec(np.array([0.,2.,1.,1e-300]),0.,0.,np.array([1.,1.,1.,2e-300]))
     np.testing.assert_array_equal(v.is_timelike(),[True,False,False,True])
