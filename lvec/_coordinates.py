@@ -1,8 +1,11 @@
 """Coordinate factories and projections using owned Cartesian storage."""
 import builtins
+import warnings
 import numpy as np
 
 from .backends import backend_where, backend_any
+from .exceptions import CoordinateWarning
+from ._numerics import invariant_policy
 from .utils import ensure_array, compute_p4_from_ptepm
 
 _ALIASES = {'px':'x', 'py':'y', 'pt':'rho', 'pz':'z', 'pseudorapidity':'eta',
@@ -65,7 +68,14 @@ def obj(**coordinates):
             if backend_any(mass<0):
                 from ._protocol import signed_norm
                 # Preserve all original Cartesian terms before cancellation.
-                negative=np.maximum(-signed_norm(mass,x,y,z),0.)
+                # Construction is independent of the invariant policy.
+                with invariant_policy('accurate'):
+                    negative=-signed_norm(mass,x,y,z)
+                if backend_any((mass<0)&(negative<0)):
+                    warnings.warn("Signed mass exceeds the spatial momentum for some spacelike "
+                                  "inputs; their energy is set to zero, as in vector, and the "
+                                  "requested invariant is not represented.",CoordinateWarning,stacklevel=3)
+                negative=np.maximum(negative,0.)
                 energy=backend_where(mass<0,negative,energy,lib)
     return LVec(x,y,z,energy)
 

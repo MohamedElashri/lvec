@@ -2,6 +2,7 @@
 from lvec.backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                         backend_atan2,
                         backend_sinh, backend_cosh, backend_where, backend_any, validate_beta, own_components, own_plain_components, freeze_array, normalize_scalar)
+from ._numerics import recover_invariants
 from .utils import (ensure_array, check_shapes, compute_p4_from_ptepm,
                     invariant_result, awkward_invariant, euclidean_result, dot_result, small_invariant, gamma_result)
 from .exceptions import ShapeError, InputError, BackendError, DependencyError
@@ -233,6 +234,9 @@ class LVec(LorentzAPI):
         Returns:
             The cached or computed value
         """
+        if not recover_invariants():
+            # Fast-policy values are retained separately from accurate ones.
+            key += '#fast'
         return self._cache.get_cached(key, func, dependencies, ttl)
     
     def _get_intermediate(self, key, func, ttl=None):

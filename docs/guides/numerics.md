@@ -29,6 +29,50 @@ representable. Read the observable required by the calculation directly.
 (True, 1e+200)
 ```
 
+### Invariant evaluation policy
+
+Signed mass enters recovery when $\lvert s\rvert\le E^2/4096$, that is
+when $m/E<1/64$. Light particles therefore usually take the compensated
+path: muons above a few GeV, electrons, photons, and massless jets. The
+recovered mass is the accurate mass of the supplied Cartesian components.
+When those components were themselves rounded, for example after
+conversion from stored $(p_T,\eta,\phi,m)$ or promotion from float32, their
+relative mass uncertainty is already of order $\epsilon E^2/m^2$, and the
+extra evaluation cost may buy no physics accuracy.
+
+The invariant policy selects the evaluation used for `mass2`, `mass`, `tau`,
+`Mt`, `Mt2`, `dot`, `gamma`, and four-vector normalization. Construction,
+boosts, sums, and rotations keep their recovery under either policy.
+
+```{py:function} lvec.invariant_policy(policy)
+Context manager selecting `'accurate'` (the default) or `'fast'` evaluation
+in the current thread or task context.
+```
+
+```{py:function} lvec.set_invariant_policy(policy)
+Set the policy for the current context and return the previous policy.
+```
+
+```{py:function} lvec.get_invariant_policy()
+Return the active policy, `'accurate'` or `'fast'`.
+```
+
+The fast policy returns the ordinary float64 expression without detection
+or recovery, including overflow to infinity. Owned collections cache values
+for the two policies separately, so a cached accurate mass is never returned
+under the fast policy, or the reverse.
+
+```{doctest}
+>>> import lvec
+>>> muon = LVec(0., 0., 1000., (1000.**2 + 0.1056583755**2) ** .5)
+>>> with lvec.invariant_policy('fast'):
+...     fast = float(muon.mass)
+>>> float(muon.mass) == fast
+False
+>>> lvec.get_invariant_policy()
+'accurate'
+```
+
 These recovery paths are selective, not a guarantee of correctly rounded
 results for every combination of inputs. Transforms are not guaranteed to
 be exactly reversible after floating-point rounding. Reference tests use

@@ -55,6 +55,20 @@ def _compensated_sum(values, *, dot=False):
     return high+(remainder+tail), had_error
 
 
+def _blocked_compensated_sum(values, *, dot=False, block=65536):
+    """Apply _compensated_sum to cache-sized slices with identical results."""
+    size = values[0].size
+    if size <= block:
+        return _compensated_sum(values, dot=dot)
+    total = np.empty(size)
+    had_error = np.empty(size, dtype=bool)
+    for start in range(0, size, block):
+        stop = start+block
+        total[start:stop], had_error[start:stop] = _compensated_sum(
+            tuple(value[start:stop] for value in values), dot=dot)
+    return total, had_error
+
+
 def _product_sum(values, *, dot=False):
     terms = []
     left = values[:4]
@@ -144,7 +158,7 @@ def _accurate_numpy(values, *, root=False, dot=False, where=None):
         if np.any(ordinary):
             selected = (tuple(array.reshape(-1) for array in arrays) if np.all(ordinary)
                         else tuple(array[ordinary] for array in arrays))
-            total, had_error = _compensated_sum(selected, dot=dot)
+            total, had_error = _blocked_compensated_sum(selected, dot=dot)
             unresolved = had_error & (abs(total) <= (64*_EPS*_EPS*scale[ordinary])*scale[ordinary])
             if root:
                 result[ordinary] = np.copysign(np.sqrt(abs(total)), total)
