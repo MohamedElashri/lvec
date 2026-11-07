@@ -8,6 +8,9 @@ import pytest
 
 from lvec import LVec
 
+# These tests exercise recovery, which the default fast policy skips.
+pytestmark = pytest.mark.usefixtures('accurate_policy')
+
 
 def reference(row):
     squares = [Fraction.from_float(float(value)) ** 2 for value in row]

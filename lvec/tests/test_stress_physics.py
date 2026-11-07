@@ -9,6 +9,9 @@ import pytest
 
 from lvec import Frame, LVec, Vector2D, Vector3D
 
+# These tests exercise recovery, which the default fast policy skips.
+pytestmark = pytest.mark.usefixtures('accurate_policy')
+
 
 def present_values(value):
     if type(value).__module__.startswith('awkward'):
