@@ -28,6 +28,10 @@ workflows:
         - 'actions/checkout@v4.4.0'
         - 'actions/setup-python@v5.6.0'
         - 'actions/upload-artifact@v4.6.2'
+    '.github/workflows/research-sessions-v035.yml':
+        - 'actions/checkout@v4.4.0'
+        - 'actions/setup-python@v5.6.0'
+        - 'actions/upload-artifact@v4.6.2'
     '.github/workflows/research-sessions.yml':
         - 'actions/checkout@v4.4.0'
         - 'actions/setup-python@v5.6.0'
