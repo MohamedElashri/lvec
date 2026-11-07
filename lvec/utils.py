@@ -7,6 +7,7 @@ from .backends import (is_ak, is_np, to_ak, to_np, backend_sqrt,
                       backend_where, backend_any)
 from .exceptions import ShapeError, BackendError
 from ._exact import accurate_result
+from ._numerics import recover_invariants
 
 _CANCELLATION_RTOL = math.sqrt(np.finfo(np.float64).eps)
 # Signed-root error grows as eps * E**2 / abs(mass). Recover before the
@@ -20,10 +21,11 @@ def small_invariant(px,py,pz,energy,*,squared=False):
     from ._exact import _product_sum,_rounded_float
     tiny=np.finfo(float).tiny
     rtol = _CANCELLATION_RTOL if squared else _MASS_CANCELLATION_RTOL
+    recover=recover_invariants()
     def evaluate(x,y,z,e):
         value=e*e-(x*x+y*y+z*z)
         bound=(rtol*abs(e))*abs(e)
-        if (not math.isfinite(value) or abs(value)<=bound or abs(value)<tiny) and all(math.isfinite(c) for c in (x,y,z,e)):
+        if recover and (not math.isfinite(value) or abs(value)<=bound or abs(value)<tiny) and all(math.isfinite(c) for c in (x,y,z,e)):
             integer,power=_product_sum((x,y,z,e))
             return _rounded_float(integer,power,root=not squared)
         if squared:return value
@@ -271,6 +273,8 @@ def dot_result(result, left, right, lib):
                                 np.maximum(abs(left[2]), abs(left[3])))
         right_scale = np.maximum(np.maximum(abs(right[0]), abs(right[1])),
                                  np.maximum(abs(right[2]), abs(right[3])))
+    if not recover_invariants():
+        return result
     bound = (_CANCELLATION_RTOL*left_scale)*right_scale
     exceptional = ~np.isfinite(result) | (abs(result) <= bound)
     if not backend_any(exceptional):
@@ -323,6 +327,17 @@ def invariant_result(m2, E, px, py, pz, lib, *, squared=False):
     roots can still be finite and are calculated without squaring the scale.
     """
     tiny = np.finfo(np.float64).tiny
+    if not recover_invariants():
+        if squared:
+            return m2
+        with np.errstate(invalid='ignore'):
+            if isinstance(m2, np.ndarray):
+                negative = np.signbit(m2)
+                np.abs(m2, out=m2)
+                np.sqrt(m2, out=m2)
+                np.negative(m2, out=m2, where=negative)
+                return m2
+            return np.sign(m2) * np.sqrt(abs(m2))
     rtol = _CANCELLATION_RTOL if squared else _MASS_CANCELLATION_RTOL
     lower, upper = _bounds(m2)
     e_min, e_max = _bounds(E)

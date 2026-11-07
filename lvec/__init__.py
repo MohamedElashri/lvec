@@ -1,7 +1,8 @@
 # __init__.py
 from .lvec import LVec
 from .vectors import Vec2D as Vector2D, Vec3D as Vector3D
-from .exceptions import ShapeError
+from .exceptions import ShapeError, CoordinateWarning
+from ._numerics import invariant_policy, set_invariant_policy, get_invariant_policy
 from .frame import Frame
 from ._coordinates import obj, array, arr, Array, awk, zip, install_factories
 
@@ -19,5 +20,7 @@ def register_awkward():
 
 __all__ = ['LVec', 'Vector2D', 'Vector3D', 'Vector4D', 'Momentum2D',
            'Momentum3D', 'Momentum4D', 'Frame', 'ShapeError',
-           'obj', 'array', 'arr', 'Array', 'awk', 'zip', 'register_awkward']
-__version__ = '0.3.3'
+           'obj', 'array', 'arr', 'Array', 'awk', 'zip', 'register_awkward',
+           'CoordinateWarning', 'invariant_policy', 'set_invariant_policy',
+           'get_invariant_policy']
+__version__ = '0.3.4'

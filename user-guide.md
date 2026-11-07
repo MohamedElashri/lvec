@@ -186,7 +186,9 @@ invariant; use zero tolerances for strict classification. Missing entries are
 excluded from aggregate validation.
 
 Negative `mass`/`tau` in coordinate factories denotes a spacelike signed
-invariant. The legacy `LVec.from_ptepm(..., m=...)` squares its mass argument;
+invariant. If its magnitude exceeds the spatial momentum, no real energy exists:
+the factory sets the energy to zero, as vector does, and issues
+`lvec.CoordinateWarning`. The legacy `LVec.from_ptepm(..., m=...)` squares its mass argument;
 `validate=True` rejects negative $p_T$ or mass there.
 
 | Limit | Result |
@@ -204,6 +206,10 @@ Calculations use float64. Scaled magnitudes, compensated or exact accumulation,
 and selective Decimal recovery address detected cancellation and range risks.
 Boost recovery also covers subnormal reference masses and proper velocities;
 parameter validation ignores masked and unused Awkward storage.
+Signed-mass recovery activates for $m/E<1/64$, so light particles usually
+take the slower compensated path. `with lvec.invariant_policy('fast'):` selects
+ordinary float64 evaluation of masses, scalar products, and $\gamma$ when the
+supplied components already limit the attainable accuracy.
 These checks cannot recover precision lost in inputs or guarantee correct
 rounding or reversible transformations for every input. A squared observable
 may overflow or underflow even when its square root is representable. NaN and

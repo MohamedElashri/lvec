@@ -45,6 +45,15 @@ Choose the boundary that matches how your analysis uses and mutates its inputs.
   At zero causal tolerance, exact null vectors are classified as lightlike.
 - **Dimensions.** Mixed-dimension algebra requires explicit projection or
   embedding. Adding $t=0$ differs from adding $\tau=0$.
+- **Retained vector conventions.** Several conventions intentionally match
+  vector: a spacelike signed mass larger than the spatial momentum gives zero
+  energy (LVec also issues `CoordinateWarning`), `np.sqrt` of a four-vector
+  returns the square root of its signed norm, `is_lightlike` defaults to an
+  absolute invariant-squared tolerance of `1e-5`, and a non-unit quaternion
+  scales spatial components by its squared norm.
+- **Invariant evaluation.** LVec recovers ill-conditioned invariants by default.
+  Use `lvec.invariant_policy('fast')` for ordinary float64 evaluation of
+  masses and scalar products, comparable to vector's arithmetic.
 - **Scope.** Numba registration, symbolic SymPy, PyTrees, coordinate dispatch
   containers, and mutable ndarray-subclass behavior are outside this API.
 
