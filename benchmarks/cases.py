@@ -8,7 +8,7 @@ from itertools import cycle
 
 import numpy as np
 
-from lvec import LVec, Vector3D, obj
+from lvec import LVec, Vector3D, invariant_policy, obj
 
 
 LAYOUTS = ("numpy", "strided", "jagged", "missing", "deep", "heavy-tail", "extreme")
@@ -371,8 +371,10 @@ def precision_cases(size, seed):
                              - Fraction.from_float(1e200) ** 2 - 1)
 
             def cold_mass2():
+                # Recovery is opt-in, and this case times the accurate path.
                 extreme.clear_cache()
-                return extreme.mass2
+                with invariant_policy('accurate'):
+                    return extreme.mass2
             return Case("cancellation_mass2", cold_mass2,
                         lambda r: np.testing.assert_array_equal(r, np.full(size, expected)))
         mixed = tuple(c.copy() for c in data)

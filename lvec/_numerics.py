@@ -1,15 +1,17 @@
 """Evaluation policy for Minkowski invariants and scalar products.
 
-The accurate policy (default) selects ill-conditioned or range-extreme
-entries after the vectorized binary64 path and re-evaluates them from the
-original components. The fast policy returns the ordinary binary64 result
-for those quantities. Boost, sum, and rotation recovery are unaffected.
+The fast policy (default) returns the ordinary binary64 result. The
+accurate policy selects ill-conditioned or range-extreme entries after the
+vectorized binary64 path and re-evaluates them from the original components.
+Boost, sum, and rotation recovery are unaffected. The policy is held in a
+context variable, so a new thread starts with the default policy rather
+than inheriting the caller's.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 _POLICIES = ('accurate', 'fast')
-_policy = ContextVar('lvec_invariant_policy', default='accurate')
+_policy = ContextVar('lvec_invariant_policy', default='fast')
 
 
 def _checked(policy):

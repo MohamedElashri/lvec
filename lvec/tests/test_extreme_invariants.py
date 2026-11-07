@@ -9,6 +9,9 @@ import pytest
 
 from lvec import LVec
 
+# These tests exercise recovery, which the default fast policy skips.
+pytestmark = pytest.mark.usefixtures('accurate_policy')
+
 
 def reference(left, right=None):
     right = left if right is None else right

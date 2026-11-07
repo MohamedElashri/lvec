@@ -206,10 +206,12 @@ Calculations use float64. Scaled magnitudes, compensated or exact accumulation,
 and selective Decimal recovery address detected cancellation and range risks.
 Boost recovery also covers subnormal reference masses and proper velocities;
 parameter validation ignores masked and unused Awkward storage.
-Signed-mass recovery activates for $m/E<1/64$, so light particles usually
-take the slower compensated path. `with lvec.invariant_policy('fast'):` selects
-ordinary float64 evaluation of masses, scalar products, and $\gamma$ when the
-supplied components already limit the attainable accuracy.
+Masses, scalar products, and $\gamma$ use ordinary float64 evaluation by
+default. `with lvec.invariant_policy('accurate'):` recovers cancelling and
+range-extreme invariants. Signed-mass recovery then activates for $m/E<1/64$,
+so light particles usually take the slower compensated path. Use it when the
+Cartesian components are the data or near the float64 range limits, not when
+the supplied components already limit the attainable accuracy.
 These checks cannot recover precision lost in inputs or guarantee correct
 rounding or reversible transformations for every input. A squared observable
 may overflow or underflow even when its square root is representable. NaN and
