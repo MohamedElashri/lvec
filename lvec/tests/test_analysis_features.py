@@ -22,6 +22,7 @@ def test_minkowski_product_and_squared_momenta():
         v.dot(2.)
 
 
+@pytest.mark.usefixtures('accurate_policy')
 def test_rapidity_beta_gamma_analytic_and_degenerate():
     y = .8
     v = LVec(0., 0., 2 * np.sinh(y), 2 * np.cosh(y))

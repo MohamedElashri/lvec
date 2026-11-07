@@ -234,9 +234,9 @@ class LVec(LorentzAPI):
         Returns:
             The cached or computed value
         """
-        if not recover_invariants():
-            # Fast-policy values are retained separately from accurate ones.
-            key += '#fast'
+        if recover_invariants():
+            # Accurate-policy values are retained separately from default ones.
+            key += '#accurate'
         return self._cache.get_cached(key, func, dependencies, ttl)
     
     def _get_intermediate(self, key, func, ttl=None):

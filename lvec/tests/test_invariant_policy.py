@@ -33,51 +33,60 @@ def within_one_ulp(result, expected):
     return bool(np.all(abs(result - expected) <= np.spacing(abs(expected))))
 
 
-def test_default_policy_is_accurate():
-    assert lvec.get_invariant_policy() == 'accurate'
+def test_default_policy_is_fast():
+    assert lvec.get_invariant_policy() == 'fast'
 
 
 def test_fast_policy_returns_plain_binary64():
     px, py, pz, energy = light_particles()
     plain = energy*energy - (px*px + py*py + pz*pz)
+    vector = LVec(px, py, pz, energy)
+    assert np.array_equal(vector.mass2, plain)
+    assert np.array_equal(vector.mass, np.sign(plain)*np.sqrt(abs(plain)))
     with lvec.invariant_policy('fast'):
-        vector = LVec(px, py, pz, energy)
-        assert np.array_equal(vector.mass2, plain)
-        assert np.array_equal(vector.mass, np.sign(plain)*np.sqrt(abs(plain)))
-    assert lvec.get_invariant_policy() == 'accurate'
+        assert np.array_equal(LVec(px, py, pz, energy).mass2, plain)
+    assert lvec.get_invariant_policy() == 'fast'
 
 
 def test_accurate_policy_recovers_light_masses():
     # Every entry lies inside the signed-mass recovery region, m/E < 1/64.
     rows = np.stack(light_particles(size=2000, momentum=1000.)).T
     assert np.all(rows[:, 3] > 64*0.1056583755)
-    vector = LVec(*rows.T)
     expected = np.array([exact_mass(row) for row in rows])
-    assert within_one_ulp(vector.mass, expected)
-    with lvec.invariant_policy('fast'):
-        assert not within_one_ulp(LVec(*rows.T).mass, expected)
+    with lvec.invariant_policy('accurate'):
+        assert within_one_ulp(LVec(*rows.T).mass, expected)
+    assert not within_one_ulp(LVec(*rows.T).mass, expected)
 
 
 def test_cache_separates_policies():
     px, py, pz, energy = light_particles(size=5000)
     vector = LVec(px, py, pz, energy)
-    accurate = vector.mass.copy()
-    with lvec.invariant_policy('fast'):
-        fast = vector.mass
+    fast = vector.mass.copy()
+    with lvec.invariant_policy('accurate'):
+        accurate = vector.mass
     assert not np.array_equal(accurate, fast)
-    assert np.array_equal(vector.mass, accurate)
-    with lvec.invariant_policy('fast'):
-        assert np.array_equal(vector.mass, fast)
+    assert np.array_equal(vector.mass, fast)
+    with lvec.invariant_policy('accurate'):
+        assert np.array_equal(vector.mass, accurate)
+
+
+def test_property_ttl_applies_to_accurate_values():
+    vector = LVec(*light_particles(size=10))
+    vector.set_ttl('mass', 1000.)
+    with lvec.invariant_policy('accurate'):
+        vector.mass
+    ttl = vector.cache_stats['properties']['mass#accurate']['ttl']
+    assert ttl is not None and 0. < ttl <= 1000.
 
 
 def test_scalar_dot_and_gamma_follow_policy():
     a = LVec(0., 0., 2.**60, 2.**60 + 2.**8)
     exact = Fraction(2**60 + 2**8)**2 - Fraction(2**60)**2
-    assert a.mass2 == float(exact)
-    assert a.dot(a) == float(exact)
-    with lvec.invariant_policy('fast'):
-        assert a.mass2 == (2.**60 + 2.**8)**2 - (2.**60)**2
-        assert LVec(0., 0., 2.**60, 2.**60 + 2.**8).dot(a) == (2.**60 + 2.**8)**2 - (2.**60)**2
+    assert a.mass2 == (2.**60 + 2.**8)**2 - (2.**60)**2
+    with lvec.invariant_policy('accurate'):
+        b = LVec(0., 0., 2.**60, 2.**60 + 2.**8)
+        assert b.mass2 == float(exact)
+        assert b.dot(b) == float(exact)
 
 
 def test_awkward_records_follow_policy():
@@ -88,26 +97,26 @@ def test_awkward_records_follow_policy():
     records = lawk.zip({'px': px, 'py': py, 'pz': pz, 'E': energy})
     flat = [np.asarray(ak.flatten(c)) for c in (px, py, pz, energy)]
     plain = flat[3]**2 - (flat[0]**2 + flat[1]**2 + flat[2]**2)
-    with lvec.invariant_policy('fast'):
-        assert np.array_equal(np.asarray(ak.flatten(records.mass2)), plain)
-        assert np.array_equal(np.asarray(ak.flatten(records.mass)), np.sqrt(plain))
+    assert np.array_equal(np.asarray(ak.flatten(records.mass2)), plain)
+    assert np.array_equal(np.asarray(ak.flatten(records.mass)), np.sqrt(plain))
     expected = [exact_mass(row) for row in zip(*flat)]
-    assert within_one_ulp(np.asarray(ak.flatten(records.mass)), expected)
+    with lvec.invariant_policy('accurate'):
+        assert within_one_ulp(np.asarray(ak.flatten(records.mass)), expected)
 
 
 def test_policy_is_context_local():
     def worker():
         return lvec.get_invariant_policy()
-    with lvec.invariant_policy('fast'):
+    with lvec.invariant_policy('accurate'):
         with ThreadPoolExecutor(1) as pool:
-            assert pool.submit(worker).result() == 'accurate'
+            assert pool.submit(worker).result() == 'fast'
 
 
 def test_set_policy_returns_previous_and_validates():
-    previous = lvec.set_invariant_policy('fast')
+    previous = lvec.set_invariant_policy('accurate')
     try:
-        assert previous == 'accurate'
-        assert lvec.get_invariant_policy() == 'fast'
+        assert previous == 'fast'
+        assert lvec.get_invariant_policy() == 'accurate'
     finally:
         lvec.set_invariant_policy(previous)
     with pytest.raises(ValueError):
@@ -138,8 +147,8 @@ def test_unrepresentable_signed_mass_warns():
         lvec.obj(px=3., py=0., pz=0., mass=2.)
 
 
-def test_construction_ignores_fast_policy():
-    with lvec.invariant_policy('fast'):
-        fast = lvec.obj(px=2.**30, py=0., pz=0., mass=-1.)
-    accurate = lvec.obj(px=2.**30, py=0., pz=0., mass=-1.)
+def test_construction_ignores_policy():
+    fast = lvec.obj(px=2.**30, py=0., pz=0., mass=-1.)
+    with lvec.invariant_policy('accurate'):
+        accurate = lvec.obj(px=2.**30, py=0., pz=0., mass=-1.)
     assert fast.E == accurate.E

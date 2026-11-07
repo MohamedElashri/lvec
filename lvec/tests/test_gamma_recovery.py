@@ -8,6 +8,9 @@ import pytest
 
 from lvec import LVec
 
+# These tests exercise recovery, which the default fast policy skips.
+pytestmark = pytest.mark.usefixtures('accurate_policy')
+
 
 def reference(row):
     if not all(math.isfinite(x) for x in row) or row[3] <= 0:

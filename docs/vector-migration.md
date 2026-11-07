@@ -51,9 +51,10 @@ Choose the boundary that matches how your analysis uses and mutates its inputs.
   returns the square root of its signed norm, `is_lightlike` defaults to an
   absolute invariant-squared tolerance of `1e-5`, and a non-unit quaternion
   scales spatial components by its squared norm.
-- **Invariant evaluation.** LVec recovers ill-conditioned invariants by default.
-  Use `lvec.invariant_policy('fast')` for ordinary float64 evaluation of
-  masses and scalar products, comparable to vector's arithmetic.
+- **Invariant evaluation.** Like vector, LVec evaluates masses and scalar
+  products with ordinary float64 arithmetic by default. Use
+  `lvec.invariant_policy('accurate')` to recover ill-conditioned and
+  range-extreme invariants.
 - **Scope.** Numba registration, symbolic SymPy, PyTrees, coordinate dispatch
   containers, and mutable ndarray-subclass behavior are outside this API.
 

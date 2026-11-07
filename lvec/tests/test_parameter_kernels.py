@@ -7,6 +7,9 @@ import pytest
 from lvec import LVec
 from lvec.exceptions import InputError
 
+# These tests exercise recovery, which the default fast policy skips.
+pytestmark = pytest.mark.usefixtures('accurate_policy')
+
 
 def gamma_reference(p,e,g):
     with localcontext() as ctx:
