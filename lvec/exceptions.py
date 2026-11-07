@@ -31,3 +31,6 @@ class BackendError(LVecError):
     def __init__(self, operation, backend, details):
         message = f"Error in {operation} operation with {backend} backend: {details}"
         super().__init__(message)
+
+class CoordinateWarning(UserWarning):
+    """Raised when requested coordinates cannot be represented exactly."""

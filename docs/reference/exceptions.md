@@ -33,6 +33,13 @@ A required optional dependency is unavailable. The message identifies the
 package and, when supplied, its minimum version.
 ```
 
+```{py:exception} lvec.CoordinateWarning
+Issued when requested coordinates cannot be represented. A signed mass
+whose magnitude exceeds a spacelike spatial momentum would require imaginary
+energy; the factory sets that energy to zero, as vector does, and warns.
+Also available as `lvec.exceptions.CoordinateWarning`.
+```
+
 Unsupported Python or NumPy operations generally raise `TypeError`.
 Invalid transformation parameters can raise `ValueError`. Optional backend
 imports may also raise Python's `ImportError` or `ModuleNotFoundError`.
