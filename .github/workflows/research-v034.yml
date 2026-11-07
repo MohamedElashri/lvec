@@ -1,0 +1,72 @@
+# Action dependencies are pinned in actions.lock.
+name: Released v0.3.4 research
+on:
+  push:
+    branches: [study/complete-research]
+    paths: [.github/workflows/research-v034.yml]
+permissions:
+  contents: read
+env:
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  VECLIB_MAXIMUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            host: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            host: aarch64-linux
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4.4.0
+        with:
+          path: control
+      - uses: actions/checkout@v4.4.0
+        with:
+          ref: v0.3.4
+          fetch-depth: 0
+          path: library
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.13.12'
+      - name: Verify released source and code-only input
+        run: |
+          test "$(git -C library rev-parse HEAD)" = 6d2fa18acc6233b6bc08129cba5cafb69cf27599
+          git -C library worktree add --detach /tmp/lvec-paper-v0.3.1 v0.3.1
+          git -C library worktree add --detach /tmp/lvec-release-v0.3.3 v0.3.3
+          mkdir -p "$RUNNER_TEMP/study"
+          cp control/research-inputs/v034/collection-code.tar.gz "$RUNNER_TEMP/study/collection-code.tar.gz"
+          cd "$RUNNER_TEMP/study"
+          echo '8fdbc48b14bf5b1402e93ca49f34893e7906df7c5666c534b71c9319be349465  collection-code.tar.gz' | sha256sum --check --strict
+          tar -xzf collection-code.tar.gz
+          sha256sum --check --strict collection-files.sha256
+          python -m pip install -r paper/requirements.txt
+      - name: Prepare verified CERN trust store
+        run: |
+          cp /etc/ssl/certs/ca-certificates.crt "$RUNNER_TEMP/cern-ca.pem"
+          for generation in 2 3; do
+            curl --fail --location --retry 3 "https://ca.cern.ch/cafiles/certificates/CERN%20Root%20Certification%20Authority%20${generation}.crt" --output "$RUNNER_TEMP/cern-${generation}.crt"
+            if [ "$generation" = 2 ]; then format=DER; else format=PEM; fi
+            openssl x509 -inform "$format" -in "$RUNNER_TEMP/cern-${generation}.crt" -out "$RUNNER_TEMP/cern-${generation}.pem"
+            cat "$RUNNER_TEMP/cern-${generation}.pem" >> "$RUNNER_TEMP/cern-ca.pem"
+          done
+          echo "SSL_CERT_FILE=$RUNNER_TEMP/cern-ca.pem" >> "$GITHUB_ENV"
+      - name: Validate and collect the complete released-source study
+        env:
+          LVEC_INPUT_SHA256: 8fdbc48b14bf5b1402e93ca49f34893e7906df7c5666c534b71c9319be349465
+        run: |
+          python "$RUNNER_TEMP/study/paper/scripts/rerun_study.py" --host '${{ matrix.host }}' --source "$GITHUB_WORKSPACE/library" --output "$RUNNER_TEMP/results/${{ matrix.host }}"
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: v034-research-${{ matrix.host }}
+          path: ${{ runner.temp }}/results
+          if-no-files-found: error
+          retention-days: 90
