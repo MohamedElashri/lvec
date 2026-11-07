@@ -109,7 +109,9 @@ jobs:
           from lvec import LVec
 
           assert importlib.metadata.version("lvec") == lvec.__version__
-          assert LVec(1e200, 1., 0., 1e200).mass2 == -1.
+          assert lvec.get_invariant_policy() == 'fast'
+          with lvec.invariant_policy('accurate'):
+              assert LVec(1e200, 1., 0., 1e200).mass2 == -1.
           description = importlib.metadata.metadata("lvec").get_payload()
           for target in re.findall(r"\]\(([^\s)]+)\)", description):
               assert target.startswith(("https://", "http://", "#")), target
